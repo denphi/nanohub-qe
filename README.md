@@ -40,8 +40,10 @@ si.write("runs/si_scf/si.in")
 
 ## Jupyter Tutorial
 
-- Notebook: `tutorials/nanohubqe_tutorial.ipynb`
-- Docs copy: `docs/notebooks/nanohubqe_tutorial.ipynb`
+- Basic notebook: `tutorials/nanohubqe_tutorial.ipynb`
+- Basic docs copy: `docs/notebooks/nanohubqe_tutorial.ipynb`
+- Advanced notebook (`espresso-7.1`): `tutorials/nanohubqe_advanced_espresso71.ipynb`
+- Advanced docs copy: `docs/notebooks/nanohubqe_advanced_espresso71.ipynb`
 
 On nanoHUB you can load QE modules directly from Python:
 
@@ -115,7 +117,7 @@ UPF repositories if needed.
 
 `nanohubqe` supports wrapping the QE command in a HUBzero `submit` command.
 Common flags supported by the runner include:
-`--venue`, `--nCpus`, `--wallTime`, `--inputfile`, `--env`, and `--parameters`.
+`-n`, `-w`, `--manager`, `--runName`, `-i`, `--env`, and `--parameters`.
 
 ```python
 from nanohubqe import QERunner, SubmitConfig, silicon_scf
@@ -124,17 +126,23 @@ deck = silicon_scf()
 runner = QERunner(default_backend="submit")
 
 submit_cfg = SubmitConfig(
-    venue="rcac",
-    n_cpus=16,
-    wall_time="02:00:00",
+    nodes=16,
+    walltime="02:00:00",
+    manager="espresso-6.8_mpi-cleanup_pw",
     run_name="si-scf",
-    input_files=["qe.in"],
+    input_files=["pseudo/Si.UPF"],  # additional inputs; qe.in is added automatically
+    executable_prefix="espresso-7.1",  # pw.x -> espresso-7.1_pw
     env={"ESPRESSO_PSEUDO": "./pseudo"},
 )
 
 # Set dry_run=False to submit for real
 result = runner.run(deck, workdir="runs/remote-si", submit_config=submit_cfg, dry_run=True)
-print(result.stdout)  # prints generated submit command
+print(result.stdout)
+# submit -n 16 -w 02:00:00 --manager espresso-6.8_mpi-cleanup_pw --runName si-scf \
+#   -i pseudo/Si.UPF espresso-7.1_pw -i qe.in
+
+# If your venue requires staging qe.in as a submit input too:
+# submit_cfg.stage_input_file = True
 ```
 
 ## Multi-step Workflow Example

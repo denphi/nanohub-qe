@@ -19,13 +19,25 @@ class SubmitConfig:
     """Configuration for remote execution via the HUBzero `submit` command."""
 
     venue: str | None = None
+    run_name: str | None = None
+    manager: str | None = None
+    nodes: int | None = None
+    walltime: str | None = None
+    # Backward-compatible aliases for older notebooks/configs.
     n_cpus: int | None = None
     wall_time: str | None = None
-    run_name: str | None = None
     input_files: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     parameters: str | None = None
     extra_args: list[str] = field(default_factory=list)
+    # Maps submit program names, e.g. "pw.x" -> "espresso-7.1_pw".
+    executable_prefix: str | None = None
+    executable_map: dict[str, str] = field(default_factory=dict)
+    # Override input flag used by remote executable command.
+    # If None and executable_prefix/executable_map is used, defaults to "-i".
+    program_input_flag: str | None = None
+    # If True, append the generated step input file to submit "-i" inputs.
+    stage_input_file: bool = False
 
 
 @dataclass
@@ -78,20 +90,44 @@ class QERunner:
     ) -> list[str]:
         """Build a HUBzero `submit` command around a QE command."""
 
-        remote_cmd = shlex.join(qe_command)
+        remote_command = list(qe_command)
+        if remote_command:
+            remote_command[0] = self._submit_executable_name(
+                remote_command[0],
+                submit_config,
+            )
+
+        program_input_flag = submit_config.program_input_flag
+        if program_input_flag is None and (
+            submit_config.executable_prefix or submit_config.executable_map
+        ):
+            program_input_flag = "-i"
+        if program_input_flag:
+            remote_command = [
+                program_input_flag if token == "-in" else token
+                for token in remote_command
+            ]
+
         command = [self.submit_executable]
 
+        nodes = submit_config.nodes
+        if nodes is None:
+            nodes = submit_config.n_cpus
+        walltime = submit_config.walltime or submit_config.wall_time
+
+        if nodes is not None:
+            command.extend(["-n", str(nodes)])
+        if walltime:
+            command.extend(["-w", walltime])
+        if submit_config.manager:
+            command.extend(["--manager", submit_config.manager])
         if submit_config.run_name:
             command.extend(["--runName", submit_config.run_name])
         if submit_config.venue:
             command.extend(["--venue", submit_config.venue])
-        if submit_config.n_cpus is not None:
-            command.extend(["--nCpus", str(submit_config.n_cpus)])
-        if submit_config.wall_time:
-            command.extend(["--wallTime", submit_config.wall_time])
 
         for item in submit_config.input_files:
-            command.extend(["--inputfile", item])
+            command.extend(["-i", item])
 
         for key, value in submit_config.env.items():
             command.extend(["--env", f"{key}={value}"])
@@ -100,8 +136,18 @@ class QERunner:
             command.extend(["--parameters", submit_config.parameters])
 
         command.extend(submit_config.extra_args)
-        command.append(remote_cmd)
+        command.extend(remote_command)
         return command
+
+    @staticmethod
+    def _submit_executable_name(executable: str, submit_config: SubmitConfig) -> str:
+        mapped = submit_config.executable_map.get(executable)
+        if mapped:
+            return mapped
+        if submit_config.executable_prefix:
+            base = executable[:-2] if executable.endswith(".x") else executable
+            return f"{submit_config.executable_prefix}_{base}"
+        return executable
 
     @staticmethod
     def _clone_submit_config(config: SubmitConfig | None) -> SubmitConfig:
@@ -109,14 +155,37 @@ class QERunner:
             return SubmitConfig()
         return SubmitConfig(
             venue=config.venue,
+            run_name=config.run_name,
+            manager=config.manager,
+            nodes=config.nodes,
+            walltime=config.walltime,
             n_cpus=config.n_cpus,
             wall_time=config.wall_time,
-            run_name=config.run_name,
             input_files=list(config.input_files),
             env=dict(config.env),
             parameters=config.parameters,
             extra_args=list(config.extra_args),
+            executable_prefix=config.executable_prefix,
+            executable_map=dict(config.executable_map),
+            program_input_flag=config.program_input_flag,
+            stage_input_file=config.stage_input_file,
         )
+
+    @staticmethod
+    def _submit_pseudo_inputs(step: QEStep) -> list[str]:
+        if step.deck is None:
+            return []
+
+        pseudo_dir_raw = str(step.deck.control.get("pseudo_dir", "./pseudo"))
+        pseudo_dir = Path(pseudo_dir_raw)
+        entries: list[str] = []
+        for species in step.deck.atomic_species:
+            pseudo_file = species.pseudo_file
+            if str(pseudo_dir) in {"", "."}:
+                entries.append(pseudo_file)
+            else:
+                entries.append(str((pseudo_dir / pseudo_file).as_posix()))
+        return entries
 
     def _effective_submit_config(
         self,
@@ -125,11 +194,14 @@ class QERunner:
         input_filename: str | None,
     ) -> SubmitConfig:
         config = self._clone_submit_config(submit_config)
-        if input_filename and input_filename not in config.input_files:
-            config.input_files.append(input_filename)
         for entry in step.submit_input_files:
             if entry not in config.input_files:
                 config.input_files.append(entry)
+        for entry in self._submit_pseudo_inputs(step):
+            if entry not in config.input_files:
+                config.input_files.append(entry)
+        if config.stage_input_file and input_filename and input_filename not in config.input_files:
+            config.input_files.append(input_filename)
         config.env.update(step.env)
         return config
 

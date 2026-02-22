@@ -11,6 +11,7 @@ def test_build_submit_command_includes_common_flags() -> None:
         venue="nanohub",
         n_cpus=8,
         wall_time="01:30:00",
+        manager="espresso-6.8_mpi-cleanup_pw",
         run_name="si-test",
         input_files=["qe.in"],
         env={"ESPRESSO_TMPDIR": "./tmp"},
@@ -19,12 +20,13 @@ def test_build_submit_command_includes_common_flags() -> None:
     command = runner.build_submit_command(["pw.x", "-in", "qe.in"], submit_cfg)
 
     assert command[0] == "submit"
+    assert "-n" in command
+    assert "-w" in command
+    assert "--manager" in command
     assert "--venue" in command
-    assert "--nCpus" in command
-    assert "--wallTime" in command
-    assert "--inputfile" in command
+    assert "-i" in command
     assert "--env" in command
-    assert "pw.x -in qe.in" in command[-1]
+    assert command[-3:] == ["pw.x", "-in", "qe.in"]
 
 
 def test_runner_dry_run_generates_input_and_command(tmp_path) -> None:
@@ -63,7 +65,30 @@ def test_run_step_submit_adds_generated_inputfile(tmp_path) -> None:
         dry_run=True,
     )
 
-    assert "submit --venue nanohub --inputfile dos.in 'dos.x -in dos.in'" == result.stdout
+    assert "submit --venue nanohub dos.x -in dos.in" == result.stdout
+
+
+def test_run_submit_matches_nanohub_style_pw_command(tmp_path) -> None:
+    runner = QERunner(default_backend="submit")
+    deck = silicon_scf(pseudo_file="Si.UPF", pseudo_dir="./pseudo")
+
+    result = runner.run(
+        deck,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(
+            nodes=2,
+            walltime="01:00:00",
+            manager="espresso-6.8_mpi-cleanup_pw",
+            run_name="si-job",
+            executable_prefix="espresso-7.1",
+        ),
+        dry_run=True,
+    )
+
+    assert (
+        "submit -n 2 -w 01:00:00 --manager espresso-6.8_mpi-cleanup_pw "
+        "--runName si-job -i pseudo/Si.UPF espresso-7.1_pw -i qe.in"
+    ) == result.stdout
 
 
 def test_run_step_records_expected_and_discovered_outputs(tmp_path) -> None:
