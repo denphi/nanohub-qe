@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Literal
 
 
-_TOTAL_ENERGY_RE = re.compile(r"!\s+total energy\s+=\s+([-+]?\d+(?:\.\d+)?)\s+Ry")
+_TOTAL_ENERGY_RE = re.compile(
+    r"^\s*!?\s*total energy\s+=\s+([-+]?\d+(?:\.\d+)?)\s+Ry",
+    re.IGNORECASE | re.MULTILINE,
+)
 _FERMI_RE = re.compile(r"the Fermi energy is\s+([-+]?\d+(?:\.\d+)?)\s+ev", re.IGNORECASE)
 _PRESSURE_RE = re.compile(r"P=\s*([-+]?\d+(?:\.\d+)?)\s*\(kbar\)")
 _WARNING_RE = re.compile(r"\bwarning\b", re.IGNORECASE)

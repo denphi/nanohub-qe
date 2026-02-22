@@ -31,6 +31,22 @@ def test_parse_pw_output_extracts_summary() -> None:
     assert summary.completed
 
 
+def test_parse_pw_output_captures_nonfinal_total_energy_lines() -> None:
+    text = """
+iteration # 1
+     total energy              =   -100.10000000 Ry
+iteration # 2
+     total energy              =   -100.25000000 Ry
+!    total energy              =   -100.30000000 Ry
+JOB DONE.
+"""
+    summary = parse_pw_output(text)
+
+    assert summary.total_energies_ry == [-100.1, -100.25, -100.3]
+    assert summary.final_total_energy_ry == -100.3
+    assert summary.completed
+
+
 def test_parse_dos_text_extracts_dos_and_integrated() -> None:
     text = """
 # E (eV) dos(E) Int dos(E)
