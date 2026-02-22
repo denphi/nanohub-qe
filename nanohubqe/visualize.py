@@ -96,6 +96,21 @@ def plot_total_energy(
     return figure
 
 
+def plot_run_curve(*args, **kwargs):
+    """Compatibility shim for removed XML curve plotting API.
+
+    XML-based run records were removed from nanohubqe. Use QE-native parsers
+    and plotting helpers such as `plot_total_energy`, `plot_dos`,
+    `plot_pdos`, `plot_bands`, and `plot_phonon_dispersion`.
+    """
+
+    raise RuntimeError(
+        "plot_run_curve is no longer supported because XML run records were removed. "
+        "Use JSON workflow records plus QE-native plotters "
+        "(plot_total_energy, plot_dos, plot_pdos, plot_bands, plot_phonon_dispersion)."
+    )
+
+
 def plot_bands(
     bands_file: str | Path,
     *,

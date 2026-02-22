@@ -38,6 +38,7 @@ from .visualize import (
     plot_dos,
     plot_pdos,
     plot_phonon_dispersion,
+    plot_run_curve,
     plot_total_energy,
 )
 from .workflow import QEStep, QEWorkflow
@@ -84,6 +85,7 @@ __all__ = [
     "plot_dos",
     "plot_pdos",
     "plot_phonon_dispersion",
+    "plot_run_curve",
     "plot_total_energy",
     "QEStep",
     "QEWorkflow",
