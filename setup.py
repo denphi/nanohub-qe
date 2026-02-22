@@ -19,7 +19,7 @@ setup(
     ),
     long_description=(Path(__file__).parent / "README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
-    python_requires=">=3.10",
+    python_requires=">=3.8",
     packages=find_packages(include=["nanohubqe", "nanohubqe.*"]),
     include_package_data=True,
     install_requires=[

@@ -7,8 +7,8 @@ name = "nanohub-qe"
 dynamic = ["version"]
 description = "Python tools for building Quantum ESPRESSO input decks, running calculations, and visualizing outputs"
 readme = "README.md"
-requires-python = ">=3.10"
-license = "MIT"
+requires-python = ">=3.8"
+license = {text = "MIT"}
 license-files = ["LICENSE"]
 authors = [
   { name = "nanoHUB QE Contributors" }
@@ -16,6 +16,8 @@ authors = [
 keywords = ["quantum-espresso", "materials-science", "simulation", "nanoHUB"]
 classifiers = [
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
