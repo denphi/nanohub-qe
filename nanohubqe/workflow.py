@@ -230,26 +230,46 @@ class QEWorkflow:
             raise KeyError(f"Step '{step_name}' is unavailable. Executed steps: {known}")
         return self._last_results[step_name]
 
-    def _require_workdir(self) -> Path:
-        if self._last_workdir is None:
-            raise RuntimeError("Workflow has not been run yet. Call sim.run(...) first.")
-        return self._last_workdir
-
-    def _find_by_patterns(self, patterns: Sequence[str]) -> Path | None:
-        workdir = self._require_workdir()
-        for pattern in patterns:
-            candidates = sorted(workdir.glob(pattern))
-            for candidate in candidates:
-                if candidate.is_file():
-                    return candidate
-        return None
-
     def _resolve_step_output(self, step_name: str) -> Path:
         result = self.step_result(step_name)
         if result.output_file.exists():
             return result.output_file
         raise FileNotFoundError(
             f"Output file for step '{step_name}' was not found: {result.output_file}"
+        )
+
+    def _resolve_generated_from_step(
+        self,
+        step_name: str,
+        *,
+        label: str,
+        matcher,
+    ) -> Path:
+        if not self._last_results:
+            raise RuntimeError("Workflow has not been run yet. Call sim.run(...) first.")
+
+        if step_name not in self._last_results:
+            executed = ", ".join(self._last_results) or "(none)"
+            raise FileNotFoundError(
+                f"{label} is unavailable because step '{step_name}' did not run. "
+                f"Executed steps: {executed}"
+            )
+
+        result = self._last_results[step_name]
+        if not result.ok:
+            raise FileNotFoundError(
+                f"{label} is unavailable because step '{step_name}' failed "
+                f"(returncode={result.returncode}). Check: {result.output_file}"
+            )
+
+        for candidate in result.discovered_outputs:
+            if candidate.is_file() and matcher(candidate):
+                return candidate
+
+        discovered = ", ".join(path.name for path in result.discovered_outputs) or "(none)"
+        raise FileNotFoundError(
+            f"{label} was not found in outputs of step '{step_name}'. "
+            f"Discovered outputs: {discovered}. Check: {result.output_file}"
         )
 
     def _resolve_dos_path(self, path: str | Path | None = None) -> Path:
@@ -259,16 +279,10 @@ class QEWorkflow:
                 return resolved
             raise FileNotFoundError(f"DOS file does not exist: {resolved}")
 
-        dos_result = self._last_results.get("dos")
-        if dos_result is not None:
-            for candidate in dos_result.discovered_outputs:
-                if candidate.name.endswith(".dos") and candidate.is_file():
-                    return candidate
-        discovered = self._find_by_patterns(["*.dos"])
-        if discovered is not None:
-            return discovered
-        raise FileNotFoundError(
-            "No DOS file found. Run a workflow with a DOS step or pass `path=` explicitly."
+        return self._resolve_generated_from_step(
+            "dos",
+            label="DOS file",
+            matcher=lambda path: path.name.endswith(".dos"),
         )
 
     def _resolve_bands_path(self, path: str | Path | None = None) -> Path:
@@ -278,21 +292,12 @@ class QEWorkflow:
                 return resolved
             raise FileNotFoundError(f"Bands file does not exist: {resolved}")
 
-        bands_pp = self._last_results.get("bands_pp")
-        if bands_pp is not None:
-            for candidate in bands_pp.discovered_outputs:
-                if (
-                    candidate.name.endswith(".bands.dat.gnu")
-                    or candidate.name.endswith(".bands.dat")
-                    or candidate.name.endswith(".gnu")
-                ) and candidate.is_file():
-                    return candidate
-
-        discovered = self._find_by_patterns(["*.bands.dat.gnu", "*.bands.dat", "*.gnu"])
-        if discovered is not None:
-            return discovered
-        raise FileNotFoundError(
-            "No bands file found. Run a workflow with a bands post-processing step or pass `path=` explicitly."
+        return self._resolve_generated_from_step(
+            "bands_pp",
+            label="Bands file",
+            matcher=lambda path: path.name.endswith(".bands.dat.gnu")
+            or path.name.endswith(".bands.dat")
+            or path.name.endswith(".gnu"),
         )
 
     def _resolve_pdos_path(self, path: str | Path | None = None) -> Path:
@@ -302,18 +307,10 @@ class QEWorkflow:
                 return resolved
             raise FileNotFoundError(f"PDOS file does not exist: {resolved}")
 
-        projwfc = self._last_results.get("projwfc")
-        if projwfc is not None:
-            for candidate in projwfc.discovered_outputs:
-                name = candidate.name
-                if "pdos" in name and not name.endswith(".out") and candidate.is_file():
-                    return candidate
-
-        discovered = self._find_by_patterns(["*.pdos*", "*pdos*"])
-        if discovered is not None and not discovered.name.endswith(".out"):
-            return discovered
-        raise FileNotFoundError(
-            "No PDOS file found. Run a workflow with a projwfc step or pass `path=` explicitly."
+        return self._resolve_generated_from_step(
+            "projwfc",
+            label="PDOS file",
+            matcher=lambda path: "pdos" in path.name and not path.name.endswith(".out"),
         )
 
     def _resolve_phonon_path(self, path: str | Path | None = None) -> Path:
@@ -323,17 +320,10 @@ class QEWorkflow:
                 return resolved
             raise FileNotFoundError(f"Phonon dispersion file does not exist: {resolved}")
 
-        matdyn = self._last_results.get("matdyn")
-        if matdyn is not None:
-            for candidate in matdyn.discovered_outputs:
-                if candidate.name.endswith(".freq") and candidate.is_file():
-                    return candidate
-
-        discovered = self._find_by_patterns(["*.freq"])
-        if discovered is not None:
-            return discovered
-        raise FileNotFoundError(
-            "No phonon frequency file found. Run a workflow with a matdyn step or pass `path=` explicitly."
+        return self._resolve_generated_from_step(
+            "matdyn",
+            label="Phonon dispersion file",
+            matcher=lambda path: path.name.endswith(".freq"),
         )
 
     def plot_total_energy(

@@ -16,7 +16,8 @@ Download link:
 The notebook covers:
 
 - loading Quantum ESPRESSO on nanoHUB with ``use`` / ``load_quantum_espresso``
-- provisioning missing pseudopotentials with ``ensure_workflow_pseudopotentials``
-- building a nanoHUB-style Si SCF + DOS + bands workflow
+- provisioning missing pseudopotentials with ``sim.prepare_pseudopotentials(...)``
+- building a nanoHUB-style Si SCF + DOS + bands workflow with ``sim.run(...)``
 - inspecting workflow output records
-- parsing and plotting results with matplotlib/plotly
+- plotting total energy, DOS, and bands with ``sim.plot_*`` helpers
+- preparing remote execution with HUBzero ``submit`` (dry-run command generation)
