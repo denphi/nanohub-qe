@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from nanohubqe import (
     parse_dos_text,
     parse_matdyn_freq_text,
     parse_pdos_text,
     parse_pw_output,
+    read_bands_gnu,
 )
 
 _SAMPLE_OUTPUT = """
@@ -68,3 +71,26 @@ def test_parse_matdyn_freq_text_auto_detects_q_vectors() -> None:
     assert data.q_path == [0.0, 0.5, 1.0]
     assert len(data.branches_cm1) == 3
     assert data.branches_cm1[0] == [0.0, 1.0, 2.0]
+
+
+def test_read_bands_gnu_skips_non_numeric_plot_header(tmp_path: Path) -> None:
+    bands_text = """
+&plot nbnd= 2, nks= 4 /
+0.0 -1.0
+0.5 -0.5
+
+text that should be ignored
+0.0 1.0
+0.5 1.5
+/
+"""
+    path = tmp_path / "qe.bands.dat"
+    path.write_text(bands_text, encoding="utf-8")
+
+    segments = read_bands_gnu(path)
+
+    assert len(segments) == 2
+    assert segments[0][0] == [0.0, 0.5]
+    assert segments[0][1] == [-1.0, -0.5]
+    assert segments[1][0] == [0.0, 0.5]
+    assert segments[1][1] == [1.0, 1.5]

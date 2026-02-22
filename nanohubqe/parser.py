@@ -359,8 +359,16 @@ def read_bands_gnu(path: str | Path) -> list[tuple[list[float], list[float]]]:
         if len(tokens) < 2:
             continue
 
-        x_values.append(float(tokens[0]))
-        y_values.append(float(tokens[1]))
+        try:
+            x_value = float(tokens[0])
+            y_value = float(tokens[1])
+        except ValueError:
+            # Some QE outputs (e.g. filband) include non-numeric header lines
+            # such as "&plot ... /" before numeric band data.
+            continue
+
+        x_values.append(x_value)
+        y_values.append(y_value)
 
     if x_values:
         segments.append((x_values, y_values))
