@@ -199,6 +199,47 @@ class QEWorkflow:
         self._last_workdir = Path(workdir)
         return self
 
+    def run_submit(
+        self,
+        *,
+        workdir: str | Path,
+        runner: QERunner | None = None,
+        submit_config: SubmitConfig | None = None,
+        timeout: float | None = None,
+        dry_run: bool = False,
+        wait: bool = True,
+        sync_outputs: bool = True,
+        poll_interval: float = 20.0,
+        wait_timeout: float | None = None,
+        assign_step_run_names: bool = True,
+        input_suffix: str = ".in",
+        output_suffix: str = ".out",
+        output_record_filename: str | None = "workflow_outputs.json",
+    ) -> QEWorkflow:
+        """Submit this workflow and optionally wait/sync outputs for plotting."""
+
+        from .runner import QERunner
+
+        active_runner = runner or QERunner(default_backend="submit")
+        results = active_runner.run_workflow_submit(
+            self,
+            workdir=workdir,
+            submit_config=submit_config,
+            timeout=timeout,
+            dry_run=dry_run,
+            wait=wait,
+            sync_outputs=sync_outputs,
+            poll_interval=poll_interval,
+            wait_timeout=wait_timeout,
+            assign_step_run_names=assign_step_run_names,
+            input_suffix=input_suffix,
+            output_suffix=output_suffix,
+            output_record_filename=output_record_filename,
+        )
+        self._last_results = results
+        self._last_workdir = Path(workdir)
+        return self
+
     def prepare_pseudopotentials(
         self,
         *,

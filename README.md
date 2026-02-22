@@ -145,6 +145,39 @@ print(result.stdout)
 # submit_cfg.stage_input_file = True
 ```
 
+For multi-step workflows, use `sim.run_submit(...)` to submit, wait, and sync:
+
+```python
+from nanohubqe import QERunner, SubmitConfig, silicon_bands_dos_reference_workflow
+
+sim = silicon_bands_dos_reference_workflow(include_plotband=False)
+sim.prepare_pseudopotentials(workdir="runs/si-remote")
+
+runner = QERunner(default_backend="submit")
+submit_cfg = SubmitConfig(
+    nodes=4,
+    walltime="00:30:00",
+    manager="espresso-6.8_mpi-cleanup_pw",
+    run_name="si-reference-remote",
+    executable_prefix="espresso-7.1",
+)
+
+sim.run_submit(
+    workdir="runs/si-remote",
+    runner=runner,
+    submit_config=submit_cfg,
+    dry_run=False,     # True => command preview only
+    wait=True,         # poll submit status for completion
+    sync_outputs=True, # try submit download/fetch commands
+)
+
+print(sim.step_result("dos").remote_status)
+sim.plot_dos(backend="plotly")
+
+# To allow completion even when expected output files are missing locally:
+# submit_cfg.require_expected_outputs = False
+```
+
 ## Multi-step Workflow Example
 
 ```python

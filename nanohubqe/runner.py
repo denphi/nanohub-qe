@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
+import shutil
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -38,6 +41,14 @@ class SubmitConfig:
     program_input_flag: str | None = None
     # If True, append the generated step input file to submit "-i" inputs.
     stage_input_file: bool = False
+    # Optional templates for status/download commands used by run_submit workflows.
+    # Available placeholders: {run_name}, {step_name}, {workdir}
+    status_command_template: str | None = None
+    download_command_template: str | None = None
+    # Optional extra roots used to locate downloaded results.
+    results_search_dirs: list[str] = field(default_factory=list)
+    # If True, fail a submit workflow step when expected outputs are unavailable.
+    require_expected_outputs: bool = True
 
 
 @dataclass
@@ -54,6 +65,10 @@ class ExecutionResult:
     expected_outputs: list[str] = field(default_factory=list)
     discovered_outputs: list[Path] = field(default_factory=list)
     submitted: bool = False
+    remote_run_name: str | None = None
+    remote_job_id: str | None = None
+    remote_status: str | None = None
+    outputs_synced: bool = False
 
     @property
     def ok(self) -> bool:
@@ -169,6 +184,10 @@ class QERunner:
             executable_map=dict(config.executable_map),
             program_input_flag=config.program_input_flag,
             stage_input_file=config.stage_input_file,
+            status_command_template=config.status_command_template,
+            download_command_template=config.download_command_template,
+            results_search_dirs=list(config.results_search_dirs),
+            require_expected_outputs=config.require_expected_outputs,
         )
 
     @staticmethod
@@ -204,6 +223,393 @@ class QERunner:
             config.input_files.append(input_filename)
         config.env.update(step.env)
         return config
+
+    @staticmethod
+    def _parse_submit_job_id(text: str) -> str | None:
+        patterns = [
+            r"\bjob(?:\s+id)?\s*[:=#]?\s*([A-Za-z0-9._:-]+)",
+            r"\brun(?:\s+id)?\s*[:=#]?\s*([A-Za-z0-9._:-]+)",
+            r"\bsubmitted(?:\s+as)?\s+([A-Za-z0-9._:-]+)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1)
+        return None
+
+    @staticmethod
+    def _render_submit_template(
+        template: str,
+        *,
+        run_name: str,
+        step_name: str,
+        workdir: Path,
+    ) -> list[str]:
+        rendered = template.format(
+            run_name=run_name,
+            step_name=step_name,
+            workdir=str(workdir),
+        )
+        return shlex.split(rendered)
+
+    def _status_command_candidates(
+        self,
+        *,
+        run_name: str,
+        step_name: str,
+        workdir: Path,
+        submit_config: SubmitConfig,
+    ) -> list[list[str]]:
+        if submit_config.status_command_template:
+            return [
+                self._render_submit_template(
+                    submit_config.status_command_template,
+                    run_name=run_name,
+                    step_name=step_name,
+                    workdir=workdir,
+                )
+            ]
+
+        return [
+            [self.submit_executable, "--status", "--runName", run_name],
+            [self.submit_executable, "--status", run_name],
+            [self.submit_executable, "status", run_name],
+        ]
+
+    def _download_command_candidates(
+        self,
+        *,
+        run_name: str,
+        step_name: str,
+        workdir: Path,
+        submit_config: SubmitConfig,
+    ) -> list[list[str]]:
+        if submit_config.download_command_template:
+            return [
+                self._render_submit_template(
+                    submit_config.download_command_template,
+                    run_name=run_name,
+                    step_name=step_name,
+                    workdir=workdir,
+                )
+            ]
+
+        return [
+            [self.submit_executable, "--download", "--runName", run_name],
+            [self.submit_executable, "--download", run_name],
+            [self.submit_executable, "download", run_name],
+            [self.submit_executable, "--results", "--runName", run_name],
+            [self.submit_executable, "--results", run_name],
+            [self.submit_executable, "results", run_name],
+            [self.submit_executable, "--fetch", "--runName", run_name],
+            [self.submit_executable, "--get", "--runName", run_name],
+        ]
+
+    @staticmethod
+    def _classify_submit_status(output_text: str) -> str:
+        text = output_text.lower()
+        failed_markers = (
+            "failed",
+            "error",
+            "cancel",
+            "aborted",
+            "killed",
+            "timed out",
+        )
+        success_markers = (
+            "completed",
+            "complete",
+            "finished",
+            "success",
+            "done",
+        )
+        running_markers = (
+            "running",
+            "queued",
+            "pending",
+            "submitted",
+            "starting",
+            "in progress",
+        )
+
+        if any(marker in text for marker in failed_markers):
+            return "failed"
+        if any(marker in text for marker in success_markers):
+            return "completed"
+        if any(marker in text for marker in running_markers):
+            return "running"
+        return "unknown"
+
+    @staticmethod
+    def _combine_process_output(process: subprocess.CompletedProcess[str]) -> str:
+        if process.stderr:
+            return (process.stdout or "") + "\n" + process.stderr
+        return process.stdout or ""
+
+    def _query_submit_status(
+        self,
+        *,
+        run_name: str,
+        step_name: str,
+        workdir: Path,
+        submit_config: SubmitConfig,
+        timeout: float | None = None,
+    ) -> tuple[str, str]:
+        candidates = self._status_command_candidates(
+            run_name=run_name,
+            step_name=step_name,
+            workdir=workdir,
+            submit_config=submit_config,
+        )
+        errors: list[str] = []
+        for command in candidates:
+            try:
+                process = subprocess.run(
+                    command,
+                    cwd=workdir,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout,
+                    check=False,
+                )
+            except FileNotFoundError:
+                errors.append(f"{shlex.join(command)} -> command not found")
+                continue
+
+            combined = self._combine_process_output(process)
+            if process.returncode != 0:
+                errors.append(
+                    f"{shlex.join(command)} -> rc={process.returncode}: {combined.strip()}"
+                )
+                continue
+            return self._classify_submit_status(combined), combined
+
+        joined = "; ".join(errors) if errors else "no candidates"
+        raise RuntimeError(
+            f"Unable to query submit status for run '{run_name}'. Attempts: {joined}"
+        )
+
+    def wait_for_submit_run(
+        self,
+        *,
+        run_name: str,
+        step_name: str,
+        workdir: str | Path,
+        submit_config: SubmitConfig,
+        poll_interval: float = 20.0,
+        wait_timeout: float | None = None,
+    ) -> tuple[str, str]:
+        """Wait for a submitted run to complete using submit status queries."""
+
+        base_dir = Path(workdir)
+        start = time.monotonic()
+        last_output = ""
+
+        while True:
+            status, output_text = self._query_submit_status(
+                run_name=run_name,
+                step_name=step_name,
+                workdir=base_dir,
+                submit_config=submit_config,
+                timeout=wait_timeout,
+            )
+            last_output = output_text
+            if status == "completed":
+                return status, output_text
+            if status == "failed":
+                raise RuntimeError(
+                    f"Remote submit run '{run_name}' failed for step '{step_name}':\n"
+                    f"{output_text.strip()}"
+                )
+            if status == "unknown":
+                return status, output_text
+
+            if wait_timeout is not None and (time.monotonic() - start) > wait_timeout:
+                raise TimeoutError(
+                    f"Timed out while waiting for submit run '{run_name}' "
+                    f"(step '{step_name}') after {wait_timeout} seconds.\n"
+                    f"Last status output:\n{last_output.strip()}"
+                )
+            time.sleep(max(poll_interval, 0.1))
+
+    def sync_submit_run_outputs(
+        self,
+        *,
+        run_name: str,
+        step_name: str,
+        workdir: str | Path,
+        submit_config: SubmitConfig,
+        timeout: float | None = None,
+    ) -> bool:
+        """Try to sync/download outputs for a completed submit run."""
+
+        base_dir = Path(workdir)
+        candidates = self._download_command_candidates(
+            run_name=run_name,
+            step_name=step_name,
+            workdir=base_dir,
+            submit_config=submit_config,
+        )
+        for command in candidates:
+            try:
+                process = subprocess.run(
+                    command,
+                    cwd=base_dir,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout,
+                    check=False,
+                )
+            except FileNotFoundError:
+                continue
+
+            if process.returncode == 0:
+                return True
+        return False
+
+    @staticmethod
+    def _results_roots(submit_config: SubmitConfig) -> list[Path]:
+        roots: list[Path] = [Path(value) for value in submit_config.results_search_dirs]
+        home = Path.home()
+        roots.extend(
+            [
+                home / "data" / "results",
+                home / "data" / "results" / ".submit_cache",
+            ]
+        )
+
+        unique: list[Path] = []
+        seen: set[str] = set()
+        for root in roots:
+            key = str(root.expanduser())
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(root.expanduser())
+        return unique
+
+    def _result_locations(
+        self,
+        *,
+        run_name: str,
+        submit_config: SubmitConfig,
+    ) -> list[Path]:
+        locations: list[Path] = []
+        for root in self._results_roots(submit_config):
+            if not root.exists():
+                continue
+
+            direct = root / run_name
+            if direct.exists():
+                locations.append(direct)
+
+            for candidate in root.glob(f"{run_name}*"):
+                if candidate.exists():
+                    locations.append(candidate)
+
+            submit_cache = root / ".submit_cache"
+            if submit_cache.exists():
+                for candidate in submit_cache.glob(f"**/{run_name}*"):
+                    if candidate.exists():
+                        locations.append(candidate)
+
+        unique: list[Path] = []
+        seen: set[str] = set()
+        for location in locations:
+            resolved = location.resolve()
+            key = str(resolved)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(resolved)
+        return unique
+
+    @staticmethod
+    def _copy_file(source: Path, target: Path) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.resolve() == target.resolve():
+            return
+        shutil.copy2(source, target)
+
+    def _sync_expected_outputs_from_results_store(
+        self,
+        *,
+        step: QEStep,
+        run_name: str,
+        workdir: Path,
+        submit_config: SubmitConfig,
+    ) -> bool:
+        locations = self._result_locations(run_name=run_name, submit_config=submit_config)
+        if not locations:
+            return False
+
+        copied_any = False
+
+        if step.output_filename:
+            output_target = workdir / step.output_filename
+            output_name = Path(step.output_filename).name
+            for location in locations:
+                candidates: list[Path] = []
+                if location.is_file():
+                    candidates = [location] if location.name == output_name else []
+                else:
+                    direct = location / step.output_filename
+                    by_name = location / output_name
+                    candidates = [candidate for candidate in (direct, by_name) if candidate.exists()]
+                    if not candidates:
+                        matches = list(location.glob(f"**/{output_name}"))
+                        candidates = [match for match in matches if match.is_file()]
+                if candidates:
+                    self._copy_file(candidates[0], output_target)
+                    copied_any = True
+                    break
+
+        for expected in step.expected_output_files:
+            target = workdir / expected
+            if target.exists():
+                continue
+            expected_name = Path(expected).name
+            for location in locations:
+                candidates: list[Path] = []
+                if location.is_file():
+                    candidates = [location] if location.name == expected_name else []
+                else:
+                    direct = location / expected
+                    by_name = location / expected_name
+                    candidates = [candidate for candidate in (direct, by_name) if candidate.exists()]
+                    if not candidates:
+                        matches = list(location.glob(f"**/{expected_name}"))
+                        candidates = [match for match in matches if match.is_file()]
+                if candidates:
+                    self._copy_file(candidates[0], target)
+                    copied_any = True
+                    break
+
+        for pattern in step.expected_output_globs:
+            for location in locations:
+                if not location.is_dir():
+                    continue
+                local_matches = list(location.glob(pattern))
+                deep_matches = list(location.glob(f"**/{pattern}"))
+                for candidate in [*local_matches, *deep_matches]:
+                    if not candidate.is_file():
+                        continue
+                    target = workdir / candidate.name
+                    self._copy_file(candidate, target)
+                    copied_any = True
+
+        return copied_any
+
+    @staticmethod
+    def _missing_expected_outputs(workdir: Path, step: QEStep) -> list[str]:
+        missing: list[str] = []
+        for expected in step.expected_output_files:
+            if not (workdir / expected).exists():
+                missing.append(expected)
+        for pattern in step.expected_output_globs:
+            if not list(workdir.glob(pattern)):
+                missing.append(f"glob:{pattern}")
+        return missing
 
     def run(
         self,
@@ -276,6 +682,7 @@ class QERunner:
 
         command = self.build_step_command(resolved_step)
         submitted = False
+        effective_submit_config: SubmitConfig | None = None
 
         if backend_name == "submit":
             if resolved_step.input_mode == "stdin":
@@ -287,6 +694,7 @@ class QERunner:
                 submit_config,
                 resolved_step.input_filename if input_text is not None else None,
             )
+            effective_submit_config = cfg
             command = self.build_submit_command(command, cfg)
             submitted = True
 
@@ -305,6 +713,9 @@ class QERunner:
                 expected_outputs=expected_outputs,
                 discovered_outputs=discovered_outputs,
                 submitted=submitted,
+                remote_run_name=(
+                    effective_submit_config.run_name if effective_submit_config is not None else None
+                ),
             )
 
         run_env = None
@@ -331,6 +742,7 @@ class QERunner:
         output_path.write_text(combined_output, encoding="utf-8")
 
         discovered_outputs = self._discover_outputs(workdir_path, resolved_step, output_path)
+        job_id = self._parse_submit_job_id(process.stdout + "\n" + process.stderr)
 
         return ExecutionResult(
             command=command,
@@ -343,6 +755,10 @@ class QERunner:
             expected_outputs=expected_outputs,
             discovered_outputs=discovered_outputs,
             submitted=submitted,
+            remote_run_name=(
+                effective_submit_config.run_name if effective_submit_config is not None else None
+            ),
+            remote_job_id=job_id if submitted else None,
         )
 
     def run_workflow(
@@ -389,6 +805,148 @@ class QERunner:
             )
         return results
 
+    def _submit_config_for_step(
+        self,
+        *,
+        submit_config: SubmitConfig | None,
+        workflow_name: str,
+        step_name: str,
+        assign_step_run_names: bool,
+    ) -> SubmitConfig:
+        cfg = self._clone_submit_config(submit_config)
+
+        if assign_step_run_names:
+            base_name = cfg.run_name or workflow_name
+            cfg.run_name = f"{base_name}-{step_name}"
+        elif cfg.run_name is None:
+            cfg.run_name = f"{workflow_name}-{step_name}"
+        return cfg
+
+    def run_workflow_submit(
+        self,
+        workflow: QEWorkflow,
+        *,
+        workdir: str | Path,
+        submit_config: SubmitConfig | None = None,
+        timeout: float | None = None,
+        dry_run: bool = False,
+        wait: bool = True,
+        sync_outputs: bool = True,
+        poll_interval: float = 20.0,
+        wait_timeout: float | None = None,
+        assign_step_run_names: bool = True,
+        input_suffix: str = ".in",
+        output_suffix: str = ".out",
+        output_record_filename: str | None = "workflow_outputs.json",
+    ) -> dict[str, ExecutionResult]:
+        """Submit each workflow step and optionally wait/sync outputs."""
+
+        base_dir = Path(workdir)
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        results: dict[str, ExecutionResult] = {}
+        for step_name, step in workflow.iter_steps(
+            input_suffix=input_suffix,
+            output_suffix=output_suffix,
+        ):
+            step_submit_config = self._submit_config_for_step(
+                submit_config=submit_config,
+                workflow_name=workflow.name,
+                step_name=step_name,
+                assign_step_run_names=assign_step_run_names,
+            )
+
+            result = self.run_step(
+                step,
+                step_name=step_name,
+                workdir=base_dir,
+                backend="submit",
+                submit_config=step_submit_config,
+                timeout=timeout,
+                dry_run=dry_run,
+            )
+            if result.remote_run_name is None:
+                result.remote_run_name = step_submit_config.run_name
+            results[step_name] = result
+            if result.returncode != 0:
+                break
+
+            if dry_run:
+                continue
+
+            if wait and result.remote_run_name:
+                try:
+                    remote_status, status_text = self.wait_for_submit_run(
+                        run_name=result.remote_run_name,
+                        step_name=step_name,
+                        workdir=base_dir,
+                        submit_config=step_submit_config,
+                        poll_interval=poll_interval,
+                        wait_timeout=wait_timeout,
+                    )
+                    result.remote_status = remote_status
+                    if status_text.strip():
+                        result.stdout = (result.stdout + "\n" + status_text).strip()
+                except RuntimeError as exc:
+                    if "Unable to query submit status" in str(exc):
+                        result.remote_status = "unknown"
+                    else:
+                        result.returncode = 1
+                        error_text = str(exc)
+                        if result.stderr:
+                            result.stderr = result.stderr + "\n" + error_text
+                        else:
+                            result.stderr = error_text
+                        break
+                except Exception as exc:
+                    result.returncode = 1
+                    error_text = str(exc)
+                    if result.stderr:
+                        result.stderr = result.stderr + "\n" + error_text
+                    else:
+                        result.stderr = error_text
+                    break
+
+            if sync_outputs and result.remote_run_name:
+                result.outputs_synced = self.sync_submit_run_outputs(
+                    run_name=result.remote_run_name,
+                    step_name=step_name,
+                    workdir=base_dir,
+                    submit_config=step_submit_config,
+                    timeout=timeout,
+                )
+                copied = self._sync_expected_outputs_from_results_store(
+                    step=step,
+                    run_name=result.remote_run_name,
+                    workdir=base_dir,
+                    submit_config=step_submit_config,
+                )
+                result.outputs_synced = result.outputs_synced or copied
+
+            result.discovered_outputs = self._discover_outputs(base_dir, step, result.output_file)
+            if step_submit_config.require_expected_outputs and (wait or sync_outputs):
+                missing_outputs = self._missing_expected_outputs(base_dir, step)
+                if missing_outputs:
+                    result.returncode = 1
+                    missing_text = ", ".join(missing_outputs)
+                    error_text = (
+                        f"Expected output files not available after submit completion/sync "
+                        f"for step '{step_name}': {missing_text}"
+                    )
+                    if result.stderr:
+                        result.stderr = result.stderr + "\n" + error_text
+                    else:
+                        result.stderr = error_text
+                    break
+
+        if output_record_filename:
+            self.write_workflow_output_record(
+                results,
+                base_dir / output_record_filename,
+                workflow_name=workflow.name,
+            )
+        return results
+
     @staticmethod
     def _discover_outputs(workdir: Path, step: QEStep, output_path: Path) -> list[Path]:
         discovered: dict[str, Path] = {}
@@ -424,6 +982,11 @@ class QERunner:
                     "returncode": result.returncode,
                     "ok": result.ok,
                     "command": result.command,
+                    "submitted": result.submitted,
+                    "remote_run_name": result.remote_run_name,
+                    "remote_job_id": result.remote_job_id,
+                    "remote_status": result.remote_status,
+                    "outputs_synced": result.outputs_synced,
                     "input_file": str(result.input_file) if result.input_file else None,
                     "stdout_file": str(result.output_file),
                     "expected_outputs": result.expected_outputs,

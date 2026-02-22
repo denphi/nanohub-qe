@@ -23,10 +23,11 @@ The notebook covers:
 - building a nanoHUB-style Si SCF + DOS + bands workflow with ``sim.run(...)``
 - inspecting workflow output records
 - plotting total energy, DOS, and bands with ``sim.plot_*`` helpers
-- preparing remote execution with HUBzero ``submit`` (dry-run command generation)
+- remote execution with HUBzero ``submit`` using ``sim.run_submit(...)`` with wait/sync
 
 The advanced notebook additionally covers:
 
 - explicit loading of ``espresso-7.1``
 - configurable SCF + DOS + bands + phonon workflow construction
 - plotting phonon dispersion and using mixed matplotlib/plotly backends
+- remote submit orchestration with output synchronization for local plotting

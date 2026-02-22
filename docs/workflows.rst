@@ -41,3 +41,34 @@ and phonon branches.
 Each step records expected/discovered outputs and workflow-level records:
 
 - ``workflow_outputs.json``
+
+Remote Submit Workflow
+----------------------
+
+Use ``sim.run_submit(...)`` to execute a full workflow through HUBzero submit,
+wait for completion, and sync outputs for plotting.
+
+.. code-block:: python
+
+   from nanohubqe import QERunner, SubmitConfig, silicon_bands_dos_reference_workflow
+
+   sim = silicon_bands_dos_reference_workflow(include_plotband=False)
+   sim.prepare_pseudopotentials(workdir="runs/si-remote")
+
+   runner = QERunner(default_backend="submit")
+   submit_cfg = SubmitConfig(
+       nodes=4,
+       walltime="00:30:00",
+       manager="espresso-6.8_mpi-cleanup_pw",
+       run_name="si-reference-remote",
+       executable_prefix="espresso-7.1",
+   )
+
+   sim.run_submit(
+       workdir="runs/si-remote",
+       runner=runner,
+       submit_config=submit_cfg,
+       dry_run=False,
+       wait=True,
+       sync_outputs=True,
+   )
