@@ -16,6 +16,12 @@ The package name is `nanohub-qe`, imported as `nanohubqe`.
 pip install -e .
 ```
 
+If you are on an older nanoHUB Python/pip stack and editable install fails, use:
+
+```bash
+pip install -e . --no-use-pep517
+```
+
 ## Quick Start
 
 ```python
