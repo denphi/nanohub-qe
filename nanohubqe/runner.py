@@ -87,6 +87,30 @@ class QERunner:
     def build_pw_command(self, input_filename: str) -> list[str]:
         return [*self.mpi_prefix, self.pw_executable, "-in", input_filename]
 
+    def _prepare_remote_command(
+        self,
+        qe_command: Sequence[str],
+        submit_config: SubmitConfig,
+    ) -> list[str]:
+        remote_command = list(qe_command)
+        if remote_command:
+            remote_command[0] = self._submit_executable_name(
+                remote_command[0],
+                submit_config,
+            )
+
+        program_input_flag = submit_config.program_input_flag
+        if program_input_flag is None and (
+            submit_config.executable_prefix or submit_config.executable_map
+        ):
+            program_input_flag = "-i"
+        if program_input_flag:
+            remote_command = [
+                program_input_flag if token == "-in" else token
+                for token in remote_command
+            ]
+        return remote_command
+
     def build_step_command(self, step: QEStep) -> list[str]:
         """Build the command line for an executable workflow step."""
 
@@ -105,23 +129,7 @@ class QERunner:
     ) -> list[str]:
         """Build a HUBzero `submit` command around a QE command."""
 
-        remote_command = list(qe_command)
-        if remote_command:
-            remote_command[0] = self._submit_executable_name(
-                remote_command[0],
-                submit_config,
-            )
-
-        program_input_flag = submit_config.program_input_flag
-        if program_input_flag is None and (
-            submit_config.executable_prefix or submit_config.executable_map
-        ):
-            program_input_flag = "-i"
-        if program_input_flag:
-            remote_command = [
-                program_input_flag if token == "-in" else token
-                for token in remote_command
-            ]
+        remote_command = self._prepare_remote_command(qe_command, submit_config)
 
         command = [self.submit_executable]
 
@@ -152,6 +160,45 @@ class QERunner:
 
         command.extend(submit_config.extra_args)
         command.extend(remote_command)
+        return command
+
+    def build_submit_command_legacy(
+        self,
+        qe_command: Sequence[str],
+        submit_config: SubmitConfig,
+    ) -> list[str]:
+        """Build a conservative legacy submit command for compatibility fallback."""
+
+        remote_command = self._prepare_remote_command(qe_command, submit_config)
+        command = [self.submit_executable]
+
+        nodes = submit_config.nodes
+        if nodes is None:
+            nodes = submit_config.n_cpus
+        walltime = submit_config.walltime or submit_config.wall_time
+
+        if submit_config.run_name:
+            command.extend(["--runName", submit_config.run_name])
+        if submit_config.venue:
+            command.extend(["--venue", submit_config.venue])
+        if nodes is not None:
+            command.extend(["--nCpus", str(nodes)])
+        if walltime:
+            command.extend(["--wallTime", walltime])
+        if submit_config.manager:
+            command.extend(["--manager", submit_config.manager])
+
+        for item in submit_config.input_files:
+            command.extend(["--inputfile", item])
+
+        for key, value in submit_config.env.items():
+            command.extend(["--env", f"{key}={value}"])
+
+        if submit_config.parameters:
+            command.extend(["--parameters", submit_config.parameters])
+
+        command.extend(submit_config.extra_args)
+        command.append(shlex.join(remote_command))
         return command
 
     @staticmethod
@@ -680,7 +727,8 @@ class QERunner:
         expected_outputs.extend(resolved_step.expected_output_files)
         expected_outputs.extend(f"glob:{pattern}" for pattern in resolved_step.expected_output_globs)
 
-        command = self.build_step_command(resolved_step)
+        step_command = self.build_step_command(resolved_step)
+        command = list(step_command)
         submitted = False
         effective_submit_config: SubmitConfig | None = None
 
@@ -695,7 +743,7 @@ class QERunner:
                 resolved_step.input_filename if input_text is not None else None,
             )
             effective_submit_config = cfg
-            command = self.build_submit_command(command, cfg)
+            command = self.build_submit_command(step_command, cfg)
             submitted = True
 
         if dry_run:
@@ -735,20 +783,89 @@ class QERunner:
             env=run_env,
         )
 
+        retry_notes: list[str] = []
+        if submitted and process.returncode != 0 and effective_submit_config is not None:
+            def summarize_attempt(cmd: list[str], proc: subprocess.CompletedProcess[str]) -> str:
+                combined = self._combine_process_output(proc).strip()
+                return f"[{proc.returncode}] {shlex.join(cmd)} :: {combined}"
+
+            retry_notes.append(summarize_attempt(command, process))
+
+            retry_candidates: list[tuple[list[str], SubmitConfig]] = []
+
+            if effective_submit_config.venue:
+                venue_free = self._clone_submit_config(effective_submit_config)
+                venue_free.venue = None
+                retry_candidates.append(
+                    (self.build_submit_command(step_command, venue_free), venue_free)
+                )
+
+            retry_candidates.append(
+                (
+                    self.build_submit_command_legacy(step_command, effective_submit_config),
+                    effective_submit_config,
+                )
+            )
+            if effective_submit_config.venue:
+                venue_free_legacy = self._clone_submit_config(effective_submit_config)
+                venue_free_legacy.venue = None
+                retry_candidates.append(
+                    (
+                        self.build_submit_command_legacy(step_command, venue_free_legacy),
+                        venue_free_legacy,
+                    )
+                )
+
+            attempted: set[str] = {shlex.join(command)}
+            for retry_command, retry_cfg in retry_candidates:
+                key = shlex.join(retry_command)
+                if key in attempted:
+                    continue
+                attempted.add(key)
+
+                retry_process = subprocess.run(
+                    retry_command,
+                    cwd=workdir_path,
+                    text=True,
+                    input=stdin_text,
+                    capture_output=True,
+                    timeout=timeout,
+                    check=False,
+                    env=run_env,
+                )
+                retry_notes.append(summarize_attempt(retry_command, retry_process))
+
+                if retry_process.returncode == 0:
+                    process = retry_process
+                    command = retry_command
+                    effective_submit_config = retry_cfg
+                    break
+
         combined_output = process.stdout
         if process.stderr:
             combined_output = process.stdout + "\n" + process.stderr
+        if retry_notes and process.returncode != 0:
+            combined_output = (combined_output + "\n\nRetry attempts:\n" + "\n".join(retry_notes)).strip()
+        elif retry_notes and process.returncode == 0:
+            combined_output = (combined_output + "\n\nRetry attempts:\n" + "\n".join(retry_notes)).strip()
 
         output_path.write_text(combined_output, encoding="utf-8")
 
         discovered_outputs = self._discover_outputs(workdir_path, resolved_step, output_path)
         job_id = self._parse_submit_job_id(process.stdout + "\n" + process.stderr)
+        error_text = process.stderr if process.stderr else (process.stdout if process.returncode != 0 else "")
+        if retry_notes and process.returncode != 0:
+            note_text = "\n".join(retry_notes)
+            if error_text:
+                error_text = error_text + "\n\nRetry attempts:\n" + note_text
+            else:
+                error_text = "Retry attempts:\n" + note_text
 
         return ExecutionResult(
             command=command,
             returncode=process.returncode,
             stdout=process.stdout,
-            stderr=process.stderr if process.stderr else (process.stdout if process.returncode != 0 else ""),
+            stderr=error_text,
             workdir=workdir_path,
             input_file=input_path,
             output_file=output_path,
