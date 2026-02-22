@@ -15,6 +15,10 @@ _FERMI_RE = re.compile(r"the Fermi energy is\s+([-+]?\d+(?:\.\d+)?)\s+ev", re.IG
 _PRESSURE_RE = re.compile(r"P=\s*([-+]?\d+(?:\.\d+)?)\s*\(kbar\)")
 _WARNING_RE = re.compile(r"\bwarning\b", re.IGNORECASE)
 _JOB_DONE_RE = re.compile(r"JOB DONE\.", re.IGNORECASE)
+_BANDS_FILBAND_HEADER_RE = re.compile(
+    r"&plot\s+nbnd\s*=\s*(\d+)\s*,\s*nks\s*=\s*(\d+)\s*/",
+    re.IGNORECASE,
+)
 
 RY_TO_EV = 13.605693122994
 
@@ -341,13 +345,89 @@ def read_matdyn_freq(
 
 
 def read_bands_gnu(path: str | Path) -> list[tuple[list[float], list[float]]]:
-    """Read `bands.x` gnuplot-style file segments split by blank lines."""
+    """Read QE bands output.
+
+    Supports both:
+    - gnuplot-style two-column segments separated by blank lines, and
+    - QE `filband` format (header `&plot nbnd=..., nks=... /` followed by
+      alternating k-point/eigenvalue rows).
+    """
+
+    text = Path(path).read_text(encoding="utf-8")
+
+    header_match = _BANDS_FILBAND_HEADER_RE.search(text)
+    if header_match is not None:
+        nbnd = int(header_match.group(1))
+        nks = int(header_match.group(2))
+        lines = text[header_match.end() :].splitlines()
+
+        def parse_numeric_tokens(raw: str) -> list[float] | None:
+            tokens = raw.split()
+            if not tokens:
+                return None
+            values: list[float] = []
+            for token in tokens:
+                try:
+                    values.append(float(token))
+                except ValueError:
+                    return None
+            return values
+
+        k_points: list[tuple[float, float, float]] = []
+        eigs_per_k: list[list[float]] = []
+
+        index = 0
+        while index < len(lines) and len(k_points) < nks:
+            raw_line = lines[index].strip()
+            index += 1
+            if not raw_line:
+                continue
+
+            k_values = parse_numeric_tokens(raw_line)
+            if k_values is None or len(k_values) < 3:
+                continue
+            k_points.append((k_values[0], k_values[1], k_values[2]))
+
+            eig_values: list[float] = []
+            while index < len(lines) and len(eig_values) < nbnd:
+                eig_line = lines[index].strip()
+                index += 1
+                if not eig_line:
+                    continue
+                values = parse_numeric_tokens(eig_line)
+                if values is None:
+                    continue
+                eig_values.extend(values)
+
+            if len(eig_values) < nbnd:
+                break
+            eigs_per_k.append(eig_values[:nbnd])
+
+        count = min(len(k_points), len(eigs_per_k))
+        if count == 0:
+            raise ValueError(
+                f"Could not parse bands filband format from: {path}. "
+                "Expected alternating k-point/eigenvalue blocks."
+            )
+
+        k_points = k_points[:count]
+        eigs_per_k = eigs_per_k[:count]
+
+        x_path = [0.0]
+        for prev, curr in zip(k_points, k_points[1:]):
+            x_path.append(x_path[-1] + math.dist(prev, curr))
+
+        segments: list[tuple[list[float], list[float]]] = []
+        for band_index in range(nbnd):
+            y_values = [row[band_index] for row in eigs_per_k]
+            segments.append((list(x_path), y_values))
+        return segments
 
     segments: list[tuple[list[float], list[float]]] = []
     x_values: list[float] = []
     y_values: list[float] = []
 
-    for raw_line in Path(path).read_text(encoding="utf-8").splitlines():
+    for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line:
             if x_values:

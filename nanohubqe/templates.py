@@ -625,9 +625,9 @@ def silicon_bands_dos_reference_workflow(
 
     if bands_k_path is None:
         bands_k_path = [
-            (0.5, 0.5, 0.5, 5.0),  # L
-            (0.0, 0.0, 0.0, 5.0),  # Gamma
-            (1.0, 0.0, 0.0, 5.0),  # X
+            (0.5, 0.5, 0.5, 20.0),  # L
+            (0.0, 0.0, 0.0, 20.0),  # Gamma
+            (1.0, 0.0, 0.0, 20.0),  # X
         ]
 
     bands_control = _default_control(
@@ -807,9 +807,9 @@ def bulk_electronic_phonon_workflow(
     if include_bands:
         if bands_k_path is None:
             bands_k_path = [
-                (0.5, 0.5, 0.5, 5.0),
-                (0.0, 0.0, 0.0, 5.0),
-                (1.0, 0.0, 0.0, 5.0),
+                (0.5, 0.5, 0.5, 20.0),
+                (0.0, 0.0, 0.0, 20.0),
+                (1.0, 0.0, 0.0, 20.0),
             ]
 
         bands_control = _default_control(

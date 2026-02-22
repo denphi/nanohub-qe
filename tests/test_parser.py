@@ -73,18 +73,37 @@ def test_parse_matdyn_freq_text_auto_detects_q_vectors() -> None:
     assert data.branches_cm1[0] == [0.0, 1.0, 2.0]
 
 
-def test_read_bands_gnu_skips_non_numeric_plot_header(tmp_path: Path) -> None:
+def test_read_bands_gnu_parses_qe_filband_format(tmp_path: Path) -> None:
     bands_text = """
-&plot nbnd= 2, nks= 4 /
+ &plot nbnd=   2, nks=    3 /
+            0.500000  0.500000  0.500000
+   -3.474   -0.883
+            0.400000  0.400000  0.400000
+   -3.936   -0.178
+            0.300000  0.300000  0.300000
+   -4.699    1.305
+"""
+    path = tmp_path / "qe.bands.dat"
+    path.write_text(bands_text, encoding="utf-8")
+
+    segments = read_bands_gnu(path)
+
+    assert len(segments) == 2
+    assert len(segments[0][0]) == 3
+    assert segments[0][0][0] == 0.0
+    assert segments[0][1] == [-3.474, -3.936, -4.699]
+    assert segments[1][1] == [-0.883, -0.178, 1.305]
+
+
+def test_read_bands_gnu_parses_two_column_segments(tmp_path: Path) -> None:
+    bands_text = """
 0.0 -1.0
 0.5 -0.5
 
-text that should be ignored
 0.0 1.0
 0.5 1.5
-/
 """
-    path = tmp_path / "qe.bands.dat"
+    path = tmp_path / "bands.dat.gnu"
     path.write_text(bands_text, encoding="utf-8")
 
     segments = read_bands_gnu(path)
