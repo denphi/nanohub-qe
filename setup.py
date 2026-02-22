@@ -23,7 +23,7 @@ setup(
     packages=find_packages(include=["nanohubqe", "nanohubqe.*"]),
     include_package_data=True,
     install_requires=[
-        "matplotlib>=3.7",
+        "matplotlib>=3.4.2",
         "plotly>=5.0",
     ],
 )
