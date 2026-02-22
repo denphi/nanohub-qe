@@ -19,6 +19,13 @@ from .parser import (
     read_pdos_directory,
     read_pw_output,
 )
+from .pseudo import (
+    PseudoRequirement,
+    PseudoStatus,
+    ensure_pseudopotentials,
+    ensure_workflow_pseudopotentials,
+    workflow_pseudopotential_requirements,
+)
 from .runner import ExecutionResult, QERunner, SubmitConfig, submit_env
 from .templates import (
     aluminum_dos_pdos_workflow,
@@ -63,6 +70,11 @@ __all__ = [
     "read_pdos",
     "read_pdos_directory",
     "read_pw_output",
+    "PseudoRequirement",
+    "PseudoStatus",
+    "ensure_pseudopotentials",
+    "ensure_workflow_pseudopotentials",
+    "workflow_pseudopotential_requirements",
     "ExecutionResult",
     "QERunner",
     "SubmitConfig",

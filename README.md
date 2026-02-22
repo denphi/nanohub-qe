@@ -88,6 +88,29 @@ result = runner.run(deck, workdir="runs/si")
 print(result.returncode, result.output_file)
 ```
 
+## Auto-Provision Pseudopotentials
+
+If `pseudo_dir` does not exist (or a required `*.UPF` file is missing),
+you can provision pseudopotentials before running:
+
+```python
+from nanohubqe import ensure_workflow_pseudopotentials, silicon_bands_dos_reference_workflow
+
+workflow = silicon_bands_dos_reference_workflow(
+    pseudo_dir="./pseudo",
+    pseudo_file="Si.UPF",
+    include_plotband=False,
+)
+
+status = ensure_workflow_pseudopotentials(workflow, workdir="runs/si-reference")
+for item in status:
+    print(item.pseudo_file, item.action, item.target_path)
+```
+
+`ensure_workflow_pseudopotentials` checks local pseudo directories first
+(`ESPRESSO_PSEUDO`, `QE_PSEUDO`, etc.), then downloads from Quantum ESPRESSO
+UPF repositories if needed.
+
 ## Run Remotely with HUBzero `submit`
 
 `nanohubqe` supports wrapping the QE command in a HUBzero `submit` command.

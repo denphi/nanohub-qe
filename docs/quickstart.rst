@@ -42,9 +42,14 @@ Run a Workflow
 
 .. code-block:: python
 
-   from nanohubqe import QERunner, silicon_bands_dos_reference_workflow
+   from nanohubqe import (
+       QERunner,
+       ensure_workflow_pseudopotentials,
+       silicon_bands_dos_reference_workflow,
+   )
 
    workflow = silicon_bands_dos_reference_workflow()
+   ensure_workflow_pseudopotentials(workflow, workdir="runs/si-reference")
    runner = QERunner(default_backend="local")
    results = runner.run_workflow(workflow, workdir="runs/si-reference", dry_run=True)
 

@@ -16,6 +16,7 @@ Download link:
 The notebook covers:
 
 - loading Quantum ESPRESSO on nanoHUB with ``use`` / ``load_quantum_espresso``
+- provisioning missing pseudopotentials with ``ensure_workflow_pseudopotentials``
 - building a nanoHUB-style Si SCF + DOS + bands workflow
 - inspecting workflow output records
 - parsing and plotting results with matplotlib/plotly
