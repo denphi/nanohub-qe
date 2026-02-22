@@ -748,7 +748,7 @@ class QERunner:
             command=command,
             returncode=process.returncode,
             stdout=process.stdout,
-            stderr=process.stderr,
+            stderr=process.stderr if process.stderr else (process.stdout if process.returncode != 0 else ""),
             workdir=workdir_path,
             input_file=input_path,
             output_file=output_path,
@@ -869,6 +869,7 @@ class QERunner:
                 result.remote_run_name = step_submit_config.run_name
             results[step_name] = result
             if result.returncode != 0:
+                result.remote_status = "submit_failed"
                 break
 
             if dry_run:
