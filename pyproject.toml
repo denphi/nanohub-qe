@@ -8,13 +8,12 @@ dynamic = ["version"]
 description = "Python tools for building Quantum ESPRESSO input decks, running calculations, and visualizing outputs"
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
-license-files = ["LICENSE"]
 authors = [
   { name = "nanoHUB QE Contributors" }
 ]
 keywords = ["quantum-espresso", "materials-science", "simulation", "nanoHUB"]
 classifiers = [
+  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
