@@ -67,6 +67,14 @@ def test_silicon_bands_dos_reference_workflow_runs_expected_steps(tmp_path) -> N
     assert "bands.x -in bands_pp.in" in results["bands_pp"].stdout
     assert "plotband.x" in results["plotband"].stdout
 
+    dos_text = results["dos"].input_file.read_text(encoding="utf-8")
+    assert "&DOS" in dos_text
+    assert "fildos = 'qe.dos'" in dos_text
+
+    bands_pp_text = results["bands_pp"].input_file.read_text(encoding="utf-8")
+    assert "&BANDS" in bands_pp_text
+    assert "filband = 'qe.bands.dat'" in bands_pp_text
+
 
 def test_bulk_configurable_workflow_supports_structure_and_phonons(tmp_path) -> None:
     workflow = bulk_electronic_phonon_workflow(
@@ -90,3 +98,25 @@ def test_bulk_configurable_workflow_supports_structure_and_phonons(tmp_path) -> 
 
     scf_text = results["scf"].input_file.read_text(encoding="utf-8")
     assert "ibrav = 2," in scf_text
+
+
+def test_bulk_configurable_workflow_uses_valid_dos_and_bands_namelists(tmp_path) -> None:
+    workflow = bulk_electronic_phonon_workflow(
+        symbol="Si",
+        structure="diamond",
+        include_dos=True,
+        include_bands=True,
+        include_plotband=False,
+        include_phonon=False,
+    )
+    runner = QERunner(default_backend="local")
+
+    results = runner.run_workflow(workflow, workdir=tmp_path, dry_run=True)
+
+    dos_text = results["dos"].input_file.read_text(encoding="utf-8")
+    assert "&DOS" in dos_text
+    assert "fildos = 'qe.dos'" in dos_text
+
+    bands_pp_text = results["bands_pp"].input_file.read_text(encoding="utf-8")
+    assert "&BANDS" in bands_pp_text
+    assert "filband = 'qe.bands.dat'" in bands_pp_text

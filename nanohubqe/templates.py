@@ -613,9 +613,10 @@ def silicon_bands_dos_reference_workflow(
     )
 
     dos_input = f"""
-&INPUTPP
+&DOS
   prefix = '{prefix}',
   outdir = '{outdir}',
+  fildos = '{prefix}.dos',
   Emax = {dos_emax},
   Emin = {dos_emin},
   DeltaE = {dos_deltae},
@@ -648,7 +649,7 @@ def silicon_bands_dos_reference_workflow(
     )
 
     bands_input = f"""
-&INPUTPP
+&BANDS
   prefix = '{prefix}',
   outdir = '{outdir}',
   filband = '{prefix}.bands.dat',
@@ -784,9 +785,10 @@ def bulk_electronic_phonon_workflow(
 
     if include_dos:
         dos_input = f"""
-&INPUTPP
+&DOS
   prefix = '{prefix}',
   outdir = '{outdir}',
+  fildos = '{prefix}.dos',
   Emax = {dos_emax},
   Emin = {dos_emin},
   DeltaE = {dos_deltae},
@@ -825,7 +827,7 @@ def bulk_electronic_phonon_workflow(
             k_points=bands_k_path,
         )
         bands_pp_input = f"""
-&INPUTPP
+&BANDS
   prefix = '{prefix}',
   outdir = '{outdir}',
   filband = '{prefix}.bands.dat',
