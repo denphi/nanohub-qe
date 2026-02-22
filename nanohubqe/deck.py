@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, Tuple, Union
 
-Vector3 = tuple[float, float, float]
-KAutomatic = tuple[int, int, int, int, int, int]
-KList = Sequence[Sequence[float | int]]
+Vector3 = Tuple[float, float, float]
+KAutomatic = Tuple[int, int, int, int, int, int]
+KList = Sequence[Sequence[Union[float, int]]]
 
 
 class DeckValidationError(ValueError):
