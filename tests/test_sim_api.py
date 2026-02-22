@@ -69,6 +69,29 @@ def test_plot_total_energy_uses_scf_output_by_default(tmp_path: Path) -> None:
     assert hasattr(axis, "plot")
 
 
+def test_plot_bands_uses_template_kpoint_labels(tmp_path: Path) -> None:
+    (tmp_path / "qe.bands.dat").write_text(
+        (
+            "&plot nbnd= 2, nks= 3 /\n"
+            " 0.500000 0.500000 0.500000\n"
+            " -3.0 0.0\n"
+            " 0.000000 0.000000 0.000000\n"
+            " -2.0 1.0\n"
+            " 1.000000 0.000000 0.000000\n"
+            " -1.0 2.0\n"
+        ),
+        encoding="utf-8",
+    )
+    sim = silicon_bands_dos_reference_workflow(include_plotband=False).run(
+        workdir=tmp_path,
+        dry_run=True,
+    )
+
+    figure = sim.plot_bands(backend="plotly")
+
+    assert list(figure.layout.xaxis.ticktext) == ["L", "G", "X"]
+
+
 def test_prepare_pseudopotentials_delegates_to_helper(monkeypatch) -> None:
     sim = silicon_bands_dos_reference_workflow(include_plotband=False)
     captured: dict[str, object] = {}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Sequence
@@ -292,13 +293,73 @@ class QEWorkflow:
                 return resolved
             raise FileNotFoundError(f"Bands file does not exist: {resolved}")
 
+        if "bands_pp" in self._last_results:
+            return self._resolve_generated_from_step(
+                "bands_pp",
+                label="Bands file",
+                matcher=lambda path: path.name.endswith(".bands.dat.gnu")
+                or path.name.endswith(".bands.dat")
+                or path.name.endswith(".gnu"),
+            )
         return self._resolve_generated_from_step(
-            "bands_pp",
+            "bands",
             label="Bands file",
             matcher=lambda path: path.name.endswith(".bands.dat.gnu")
             or path.name.endswith(".bands.dat")
             or path.name.endswith(".gnu"),
         )
+
+    def _bands_labels_from_metadata(self) -> list[str] | None:
+        raw = self.metadata.get("bands_k_labels")
+        if not raw:
+            return None
+        labels = [item.strip() for item in raw.split(",") if item.strip()]
+        return labels or None
+
+    def _bands_step_deck(self) -> PWInputDeck | None:
+        for step_name in ("bands_pw", "bands"):
+            step = self.steps.get(step_name)
+            if isinstance(step, PWInputDeck):
+                return step
+            if isinstance(step, QEStep) and step.deck is not None:
+                return step.deck
+        return None
+
+    def _bands_ticks(
+        self,
+        labels: Sequence[str] | None = None,
+    ) -> list[tuple[float, str]] | None:
+        deck = self._bands_step_deck()
+        if deck is None or deck.k_points is None:
+            return None
+
+        if not isinstance(deck.k_points, Sequence):
+            return None
+
+        points: list[tuple[float, float, float]] = []
+        for row in deck.k_points:
+            if not isinstance(row, Sequence):
+                continue
+            if len(row) < 3:
+                continue
+            points.append((float(row[0]), float(row[1]), float(row[2])))
+
+        if len(points) < 2:
+            return None
+
+        resolved_labels = list(labels) if labels is not None else self._bands_labels_from_metadata()
+        if not resolved_labels:
+            return None
+
+        x_positions = [0.0]
+        for prev, curr in zip(points, points[1:]):
+            x_positions.append(x_positions[-1] + math.dist(prev, curr))
+
+        count = min(len(x_positions), len(resolved_labels))
+        if count == 0:
+            return None
+
+        return [(x_positions[index], resolved_labels[index]) for index in range(count)]
 
     def _resolve_pdos_path(self, path: str | Path | None = None) -> Path:
         if path is not None:
@@ -362,6 +423,7 @@ class QEWorkflow:
         path: str | Path | None = None,
         *,
         fermi_energy_ev: float | None = None,
+        k_labels: Sequence[str] | None = None,
         backend: str = "matplotlib",
         ax=None,
     ):
@@ -370,7 +432,14 @@ class QEWorkflow:
         from .visualize import plot_bands
 
         bands_path = self._resolve_bands_path(path)
-        return plot_bands(bands_path, fermi_energy_ev=fermi_energy_ev, backend=backend, ax=ax)
+        kpoint_ticks = self._bands_ticks(labels=k_labels)
+        return plot_bands(
+            bands_path,
+            fermi_energy_ev=fermi_energy_ev,
+            kpoint_ticks=kpoint_ticks,
+            backend=backend,
+            ax=ax,
+        )
 
     def plot_pdos(
         self,

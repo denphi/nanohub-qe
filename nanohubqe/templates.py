@@ -301,7 +301,11 @@ def silicon_bands_workflow(
         steps={"scf": scf_deck, "bands": bands_deck},
         order=["scf", "bands"],
         notes="Run bands.x and plotting utilities after pw.x bands step to post-process eigenvalues.",
-        metadata={"material": "Si", "workflow_type": "bands"},
+        metadata={
+            "material": "Si",
+            "workflow_type": "bands",
+            "bands_k_labels": "G,X,W,K,G,L,U,W,L,K",
+        },
     )
 
 
@@ -699,7 +703,11 @@ def silicon_bands_dos_reference_workflow(
             "Reference flow matching nanoHUB dftqe silicon case: "
             "SCF -> DOS -> bands (pw.x) -> bands.x -> plotband.x."
         ),
-        metadata={"material": "Si", "workflow_type": "bands_dos_reference"},
+        metadata={
+            "material": "Si",
+            "workflow_type": "bands_dos_reference",
+            "bands_k_labels": "L,G,X",
+        },
     )
 
 
@@ -935,6 +943,7 @@ def bulk_electronic_phonon_workflow(
             "material": symbol,
             "structure": structure.lower(),
             "workflow_type": "configurable_bulk",
+            "bands_k_labels": "L,G,X",
         },
     )
 

@@ -115,10 +115,15 @@ def plot_bands(
     bands_file: str | Path,
     *,
     fermi_energy_ev: float | None = None,
+    kpoint_ticks: list[tuple[float, str]] | None = None,
     backend: str = "matplotlib",
     ax=None,
 ):
-    """Plot a `bands.x` gnuplot file with optional Fermi-level alignment."""
+    """Plot a `bands.x` file with optional Fermi-level alignment.
+
+    ``kpoint_ticks`` can be provided as ``[(x_position, label), ...]`` to
+    label high-symmetry k-points (for example ``[(0.0, "L"), (1.0, "G")]``).
+    """
 
     segments = read_bands_gnu(bands_file)
     backend_name = _validate_backend(backend)
@@ -142,6 +147,13 @@ def plot_bands(
         ax.set_xlabel("k-path")
         ax.set_title("Band Structure")
         ax.grid(True, alpha=0.2)
+        if kpoint_ticks:
+            x_positions = [item[0] for item in kpoint_ticks]
+            labels = [item[1] for item in kpoint_ticks]
+            ax.set_xticks(x_positions)
+            ax.set_xticklabels(labels)
+            for x_position in x_positions:
+                ax.axvline(x_position, color="gray", linewidth=0.7, alpha=0.35)
         return ax
 
     go = _import_plotly()
@@ -171,6 +183,12 @@ def plot_bands(
         yaxis_title=ylabel,
         template="plotly_white",
     )
+    if kpoint_ticks:
+        x_positions = [item[0] for item in kpoint_ticks]
+        labels = [item[1] for item in kpoint_ticks]
+        figure.update_xaxes(tickmode="array", tickvals=x_positions, ticktext=labels)
+        for x_position in x_positions:
+            figure.add_vline(x=x_position, line_dash="dot", line_color="gray")
     return figure
 
 
