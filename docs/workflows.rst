@@ -23,9 +23,9 @@ and phonon branches.
 
 .. code-block:: python
 
-   from nanohubqe import QERunner, bulk_electronic_phonon_workflow
+   from nanohubqe import bulk_electronic_phonon_workflow
 
-   workflow = bulk_electronic_phonon_workflow(
+   sim = bulk_electronic_phonon_workflow(
        symbol="Al",
        structure="fcc",      # sc, fcc, bcc, diamond
        mass_amu=26.9815385,
@@ -36,8 +36,7 @@ and phonon branches.
        phonon_q_grid=(2, 2, 2),
    )
 
-   runner = QERunner(default_backend="local")
-   results = runner.run_workflow(workflow, workdir="runs/al", dry_run=True)
+   sim.run(workdir="runs/al", dry_run=True)
 
 Each step records expected/discovered outputs and workflow-level records:
 

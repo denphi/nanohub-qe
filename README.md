@@ -140,26 +140,25 @@ print(result.stdout)  # prints generated submit command
 ## Multi-step Workflow Example
 
 ```python
-from nanohubqe import QERunner, aluminum_dos_pdos_workflow
+from nanohubqe import aluminum_dos_pdos_workflow
 
-workflow = aluminum_dos_pdos_workflow()
-runner = QERunner(default_backend="local")
-results = runner.run_workflow(workflow, workdir="runs/al-dos", dry_run=True)
-print(results["dos"].stdout)      # dos.x -in dos.in
-print(results["projwfc"].stdout)  # projwfc.x -in projwfc.in
+sim = aluminum_dos_pdos_workflow()
+sim.run(workdir="runs/al-dos", dry_run=True)
+print(sim.step_result("dos").stdout)      # dos.x -in dos.in
+print(sim.step_result("projwfc").stdout)  # projwfc.x -in projwfc.in
 
 # auto-generated records:
 # - runs/al-dos/workflow_outputs.json
-print(results["dos"].expected_outputs)
-print([p.name for p in results["dos"].discovered_outputs])
+print(sim.step_result("dos").expected_outputs)
+print([p.name for p in sim.step_result("dos").discovered_outputs])
 ```
 
 ## nanoHUB-style Si SCF+DOS+Bands Example
 
 ```python
-from nanohubqe import QERunner, silicon_bands_dos_reference_workflow
+from nanohubqe import silicon_bands_dos_reference_workflow
 
-workflow = silicon_bands_dos_reference_workflow(
+sim = silicon_bands_dos_reference_workflow(
     a=5.43,
     ecutwfc=16.0,
     ecutrho=96.0,
@@ -170,17 +169,16 @@ workflow = silicon_bands_dos_reference_workflow(
     dos_deltae=0.1,
 )
 
-runner = QERunner(default_backend="local")
-results = runner.run_workflow(workflow, workdir="runs/si-reference", dry_run=True)
-print(results["bands_pp"].stdout)  # bands.x -in bands_pp.in
+sim.run(workdir="runs/si-reference", dry_run=True)
+print(sim.step_result("bands_pp").stdout)  # bands.x -in bands_pp.in
 ```
 
 ## UI-like Configurable Structure + Phonons Example
 
 ```python
-from nanohubqe import QERunner, bulk_electronic_phonon_workflow
+from nanohubqe import bulk_electronic_phonon_workflow
 
-workflow = bulk_electronic_phonon_workflow(
+sim = bulk_electronic_phonon_workflow(
     symbol="Al",
     structure="fcc",      # sc, fcc, bcc, diamond
     mass_amu=26.9815385,
@@ -191,10 +189,9 @@ workflow = bulk_electronic_phonon_workflow(
     phonon_q_grid=(2, 2, 2),
 )
 
-runner = QERunner(default_backend="local")
-results = runner.run_workflow(workflow, workdir="runs/al-ui-style", dry_run=True)
-print(results["ph"].stdout)      # ph.x -in ph.in
-print(results["matdyn"].stdout)  # matdyn.x -in matdyn.in
+sim.run(workdir="runs/al-ui-style", dry_run=True)
+print(sim.step_result("ph").stdout)      # ph.x -in ph.in
+print(sim.step_result("matdyn").stdout)  # matdyn.x -in matdyn.in
 ```
 
 ## Parse QE Output
@@ -215,23 +212,14 @@ phonons = read_matdyn_freq("runs/si-ph/si_ph.freq")
 ## Plot Results
 
 ```python
-from nanohubqe import (
-    plot_bands,
-    plot_dos,
-    plot_pdos,
-    plot_phonon_dispersion,
-    plot_total_energy,
-)
+from nanohubqe import silicon_bands_dos_reference_workflow
 
-# matplotlib backend (default)
-plot_total_energy("runs/si/qe.out", backend="matplotlib")
-plot_bands("runs/si_bands/bands.dat.gnu", fermi_energy_ev=5.8, backend="matplotlib")
-plot_dos("runs/si_dos/si.dos", fermi_energy_ev=5.8, backend="matplotlib")
-plot_pdos("runs/al-dos/al_dos.pdos_atm#1(Al)_wfc#1(s)", backend="matplotlib")
-plot_phonon_dispersion("runs/si-ph/si_ph.freq", backend="matplotlib")
+sim = silicon_bands_dos_reference_workflow(include_plotband=False)
+sim.run(workdir="runs/si-reference", dry_run=False)
 
-# plotly backend
-fig = plot_dos("runs/si_dos/si.dos", backend="plotly")
+# convenience plotting from latest run outputs
+sim.plot_total_energy(backend="matplotlib")
+fig = sim.plot_dos(backend="plotly")
 fig.show()
 ```
 

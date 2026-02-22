@@ -42,27 +42,19 @@ Run a Workflow
 
 .. code-block:: python
 
-   from nanohubqe import (
-       QERunner,
-       ensure_workflow_pseudopotentials,
-       silicon_bands_dos_reference_workflow,
-   )
+   from nanohubqe import silicon_bands_dos_reference_workflow
 
-   workflow = silicon_bands_dos_reference_workflow()
-   ensure_workflow_pseudopotentials(workflow, workdir="runs/si-reference")
-   runner = QERunner(default_backend="local")
-   results = runner.run_workflow(workflow, workdir="runs/si-reference", dry_run=True)
+   sim = silicon_bands_dos_reference_workflow(include_plotband=False)
+   sim.prepare_pseudopotentials(workdir="runs/si-reference")
+   sim.run(workdir="runs/si-reference", dry_run=True)
 
-   print(results["dos"].stdout)
-   print(results["dos"].expected_outputs)
+   print(sim.step_result("dos").stdout)
+   print(sim.step_result("dos").expected_outputs)
 
 Parse and Plot
 --------------
 
 .. code-block:: python
 
-   from nanohubqe import read_dos, plot_dos
-
-   dos = read_dos("runs/si-reference/qe.dos")
-   fig = plot_dos(dos, backend="plotly")
+   fig = sim.plot_dos(backend="plotly")
    fig.show()
