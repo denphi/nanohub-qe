@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>nanohubqe.templates &#8212; nanohub-qe 0.1.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for nanohubqe.templates</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Reusable templates for common Quantum ESPRESSO simulations.&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.deck</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atom</span><span class="p">,</span> <span class="n">PWInputDeck</span><span class="p">,</span> <span class="n">Species</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.workflow</span><span class="w"> </span><span class="kn">import</span> <span class="n">QEStep</span><span class="p">,</span> <span class="n">QEWorkflow</span>
+
+<span class="n">_ATOMIC_MASSES</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;Al&quot;</span><span class="p">:</span> <span class="mf">26.9815385</span><span class="p">,</span>
+    <span class="s2">&quot;C&quot;</span><span class="p">:</span> <span class="mf">12.0107</span><span class="p">,</span>
+    <span class="s2">&quot;Si&quot;</span><span class="p">:</span> <span class="mf">28.0855</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="n">_BOHR_PER_ANGSTROM</span> <span class="o">=</span> <span class="mf">1.8897261254578281</span>
+<span class="n">_BULK_STRUCTURE_DEFS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;sc&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;basis&quot;</span><span class="p">:</span> <span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)]},</span>
+    <span class="s2">&quot;fcc&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;basis&quot;</span><span class="p">:</span> <span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)]},</span>
+    <span class="s2">&quot;bcc&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;basis&quot;</span><span class="p">:</span> <span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)]},</span>
+    <span class="s2">&quot;diamond&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;basis&quot;</span><span class="p">:</span> <span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">)]},</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_silicon_cell</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]:</span>
+    <span class="n">half</span> <span class="o">=</span> <span class="n">a</span> <span class="o">/</span> <span class="mf">2.0</span>
+    <span class="k">return</span> <span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">half</span><span class="p">,</span> <span class="n">half</span><span class="p">),</span> <span class="p">(</span><span class="n">half</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">half</span><span class="p">),</span> <span class="p">(</span><span class="n">half</span><span class="p">,</span> <span class="n">half</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_aluminum_fcc_atoms</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atom</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;Al&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+        <span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;Al&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)),</span>
+        <span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;Al&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)),</span>
+        <span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;Al&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+    <span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_bulk_atoms</span><span class="p">(</span><span class="n">symbol</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">structure</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">Atom</span><span class="p">]]:</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="n">structure</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_BULK_STRUCTURE_DEFS</span><span class="p">:</span>
+        <span class="n">available</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_BULK_STRUCTURE_DEFS</span><span class="p">))</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported structure &#39;</span><span class="si">{</span><span class="n">structure</span><span class="si">}</span><span class="s2">&#39;. Choose one of: </span><span class="si">{</span><span class="n">available</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">definition</span> <span class="o">=</span> <span class="n">_BULK_STRUCTURE_DEFS</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+    <span class="n">atoms</span> <span class="o">=</span> <span class="p">[</span><span class="n">Atom</span><span class="p">(</span><span class="n">symbol</span><span class="p">,</span> <span class="n">basis</span><span class="p">)</span> <span class="k">for</span> <span class="n">basis</span> <span class="ow">in</span> <span class="n">definition</span><span class="p">[</span><span class="s2">&quot;basis&quot;</span><span class="p">]]</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">definition</span><span class="p">[</span><span class="s2">&quot;ibrav&quot;</span><span class="p">]),</span> <span class="n">atoms</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_default_control</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">calculation</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">pseudo_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">outdir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">bool</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;calculation&quot;</span><span class="p">:</span> <span class="n">calculation</span><span class="p">,</span>
+        <span class="s2">&quot;prefix&quot;</span><span class="p">:</span> <span class="n">prefix</span><span class="p">,</span>
+        <span class="s2">&quot;pseudo_dir&quot;</span><span class="p">:</span> <span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="s2">&quot;outdir&quot;</span><span class="p">:</span> <span class="n">outdir</span><span class="p">,</span>
+        <span class="s2">&quot;tstress&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s2">&quot;tprnfor&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">}</span>
+
+
+<div class="viewcode-block" id="silicon_scf">
+<a class="viewcode-back" href="../../api.html#nanohubqe.silicon_scf">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">silicon_scf</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">a</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.43</span><span class="p">,</span>
+    <span class="n">ecutwfc</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">45.0</span><span class="p">,</span>
+    <span class="n">ecutrho</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">k_points</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+    <span class="n">pseudo_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Si.pbe-n-kjpaw_psl.1.0.0.UPF&quot;</span><span class="p">,</span>
+    <span class="n">calculation</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;scf&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;si&quot;</span><span class="p">,</span>
+    <span class="n">pseudo_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./pseudo&quot;</span><span class="p">,</span>
+    <span class="n">outdir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./tmp&quot;</span><span class="p">,</span>
+    <span class="n">conv_thr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0e-8</span><span class="p">,</span>
+    <span class="n">mixing_beta</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PWInputDeck</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Silicon diamond primitive cell SCF template.&quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">ecutrho</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ecutrho</span> <span class="o">=</span> <span class="mf">8.0</span> <span class="o">*</span> <span class="n">ecutwfc</span>
+
+    <span class="n">control</span> <span class="o">=</span> <span class="n">_default_control</span><span class="p">(</span>
+        <span class="n">calculation</span><span class="o">=</span><span class="n">calculation</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">system</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;ecutwfc&quot;</span><span class="p">:</span> <span class="n">ecutwfc</span><span class="p">,</span>
+        <span class="s2">&quot;ecutrho&quot;</span><span class="p">:</span> <span class="n">ecutrho</span><span class="p">,</span>
+        <span class="s2">&quot;occupations&quot;</span><span class="p">:</span> <span class="s2">&quot;fixed&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">electrons</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;conv_thr&quot;</span><span class="p">:</span> <span class="n">conv_thr</span><span class="p">,</span>
+        <span class="s2">&quot;mixing_beta&quot;</span><span class="p">:</span> <span class="n">mixing_beta</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">cell</span> <span class="o">=</span> <span class="n">_silicon_cell</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">PWInputDeck</span><span class="p">(</span>
+        <span class="n">control</span><span class="o">=</span><span class="n">control</span><span class="p">,</span>
+        <span class="n">system</span><span class="o">=</span><span class="n">system</span><span class="p">,</span>
+        <span class="n">electrons</span><span class="o">=</span><span class="n">electrons</span><span class="p">,</span>
+        <span class="n">atomic_species</span><span class="o">=</span><span class="p">[</span><span class="n">Species</span><span class="p">(</span><span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="n">_ATOMIC_MASSES</span><span class="p">[</span><span class="s2">&quot;Si&quot;</span><span class="p">],</span> <span class="n">pseudo_file</span><span class="p">)],</span>
+        <span class="n">atomic_positions</span><span class="o">=</span><span class="p">[</span><span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span> <span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">))],</span>
+        <span class="n">atomic_positions_mode</span><span class="o">=</span><span class="s2">&quot;crystal&quot;</span><span class="p">,</span>
+        <span class="n">k_points_mode</span><span class="o">=</span><span class="s2">&quot;automatic&quot;</span><span class="p">,</span>
+        <span class="n">k_points</span><span class="o">=</span><span class="n">k_points</span><span class="p">,</span>
+        <span class="n">cell_parameters</span><span class="o">=</span><span class="n">cell</span><span class="p">,</span>
+        <span class="n">cell_parameters_mode</span><span class="o">=</span><span class="s2">&quot;angstrom&quot;</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="graphene_relax">
+<a class="viewcode-back" href="../../api.html#nanohubqe.graphene_relax">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">graphene_relax</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">a</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.46</span><span class="p">,</span>
+    <span class="n">vacuum</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">18.0</span><span class="p">,</span>
+    <span class="n">ecutwfc</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">60.0</span><span class="p">,</span>
+    <span class="n">ecutrho</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">k_points</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+    <span class="n">pseudo_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;C.pbe-n-kjpaw_psl.1.0.0.UPF&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;graphene&quot;</span><span class="p">,</span>
+    <span class="n">pseudo_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./pseudo&quot;</span><span class="p">,</span>
+    <span class="n">outdir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./tmp&quot;</span><span class="p">,</span>
+    <span class="n">conv_thr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0e-9</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PWInputDeck</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Graphene 2D cell geometry relaxation template.&quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">ecutrho</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ecutrho</span> <span class="o">=</span> <span class="mf">8.0</span> <span class="o">*</span> <span class="n">ecutwfc</span>
+
+    <span class="n">control</span> <span class="o">=</span> <span class="n">_default_control</span><span class="p">(</span>
+        <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;relax&quot;</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">system</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;ecutwfc&quot;</span><span class="p">:</span> <span class="n">ecutwfc</span><span class="p">,</span>
+        <span class="s2">&quot;ecutrho&quot;</span><span class="p">:</span> <span class="n">ecutrho</span><span class="p">,</span>
+        <span class="s2">&quot;occupations&quot;</span><span class="p">:</span> <span class="s2">&quot;smearing&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;smearing&quot;</span><span class="p">:</span> <span class="s2">&quot;mv&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;degauss&quot;</span><span class="p">:</span> <span class="mf">0.02</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">electrons</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;conv_thr&quot;</span><span class="p">:</span> <span class="n">conv_thr</span><span class="p">,</span> <span class="s2">&quot;mixing_beta&quot;</span><span class="p">:</span> <span class="mf">0.3</span><span class="p">}</span>
+    <span class="n">ions</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;ion_dynamics&quot;</span><span class="p">:</span> <span class="s2">&quot;bfgs&quot;</span><span class="p">}</span>
+
+    <span class="n">cell</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">a</span><span class="p">,</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">3.0</span><span class="p">)</span> <span class="o">*</span> <span class="n">a</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">vacuum</span><span class="p">),</span>
+    <span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">PWInputDeck</span><span class="p">(</span>
+        <span class="n">control</span><span class="o">=</span><span class="n">control</span><span class="p">,</span>
+        <span class="n">system</span><span class="o">=</span><span class="n">system</span><span class="p">,</span>
+        <span class="n">electrons</span><span class="o">=</span><span class="n">electrons</span><span class="p">,</span>
+        <span class="n">ions</span><span class="o">=</span><span class="n">ions</span><span class="p">,</span>
+        <span class="n">atomic_species</span><span class="o">=</span><span class="p">[</span><span class="n">Species</span><span class="p">(</span><span class="s2">&quot;C&quot;</span><span class="p">,</span> <span class="n">_ATOMIC_MASSES</span><span class="p">[</span><span class="s2">&quot;C&quot;</span><span class="p">],</span> <span class="n">pseudo_file</span><span class="p">)],</span>
+        <span class="n">atomic_positions</span><span class="o">=</span><span class="p">[</span><span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;C&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)),</span> <span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;C&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">2.0</span> <span class="o">/</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))],</span>
+        <span class="n">atomic_positions_mode</span><span class="o">=</span><span class="s2">&quot;crystal&quot;</span><span class="p">,</span>
+        <span class="n">k_points_mode</span><span class="o">=</span><span class="s2">&quot;automatic&quot;</span><span class="p">,</span>
+        <span class="n">k_points</span><span class="o">=</span><span class="n">k_points</span><span class="p">,</span>
+        <span class="n">cell_parameters</span><span class="o">=</span><span class="n">cell</span><span class="p">,</span>
+        <span class="n">cell_parameters_mode</span><span class="o">=</span><span class="s2">&quot;angstrom&quot;</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="aluminum_vc_relax">
+<a class="viewcode-back" href="../../api.html#nanohubqe.aluminum_vc_relax">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">aluminum_vc_relax</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">a</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">4.05</span><span class="p">,</span>
+    <span class="n">ecutwfc</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">45.0</span><span class="p">,</span>
+    <span class="n">ecutrho</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">k_points</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+    <span class="n">pseudo_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Al.pbe-n-kjpaw_psl.1.0.0.UPF&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;al&quot;</span><span class="p">,</span>
+    <span class="n">pseudo_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./pseudo&quot;</span><span class="p">,</span>
+    <span class="n">outdir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./tmp&quot;</span><span class="p">,</span>
+    <span class="n">conv_thr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0e-9</span><span class="p">,</span>
+    <span class="n">press_conv_thr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PWInputDeck</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;FCC aluminum variable-cell relaxation template.&quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">ecutrho</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ecutrho</span> <span class="o">=</span> <span class="mf">8.0</span> <span class="o">*</span> <span class="n">ecutwfc</span>
+
+    <span class="n">control</span> <span class="o">=</span> <span class="n">_default_control</span><span class="p">(</span>
+        <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;vc-relax&quot;</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">system</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;ecutwfc&quot;</span><span class="p">:</span> <span class="n">ecutwfc</span><span class="p">,</span>
+        <span class="s2">&quot;ecutrho&quot;</span><span class="p">:</span> <span class="n">ecutrho</span><span class="p">,</span>
+        <span class="s2">&quot;occupations&quot;</span><span class="p">:</span> <span class="s2">&quot;smearing&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;smearing&quot;</span><span class="p">:</span> <span class="s2">&quot;mv&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;degauss&quot;</span><span class="p">:</span> <span class="mf">0.02</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">electrons</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;conv_thr&quot;</span><span class="p">:</span> <span class="n">conv_thr</span><span class="p">,</span> <span class="s2">&quot;mixing_beta&quot;</span><span class="p">:</span> <span class="mf">0.3</span><span class="p">}</span>
+    <span class="n">ions</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;ion_dynamics&quot;</span><span class="p">:</span> <span class="s2">&quot;bfgs&quot;</span><span class="p">}</span>
+    <span class="n">cell</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;cell_dynamics&quot;</span><span class="p">:</span> <span class="s2">&quot;bfgs&quot;</span><span class="p">,</span> <span class="s2">&quot;press_conv_thr&quot;</span><span class="p">:</span> <span class="n">press_conv_thr</span><span class="p">}</span>
+
+    <span class="n">cell_vectors</span> <span class="o">=</span> <span class="p">[(</span><span class="n">a</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">a</span><span class="p">)]</span>
+    <span class="n">atoms</span> <span class="o">=</span> <span class="n">_aluminum_fcc_atoms</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">PWInputDeck</span><span class="p">(</span>
+        <span class="n">control</span><span class="o">=</span><span class="n">control</span><span class="p">,</span>
+        <span class="n">system</span><span class="o">=</span><span class="n">system</span><span class="p">,</span>
+        <span class="n">electrons</span><span class="o">=</span><span class="n">electrons</span><span class="p">,</span>
+        <span class="n">ions</span><span class="o">=</span><span class="n">ions</span><span class="p">,</span>
+        <span class="n">cell</span><span class="o">=</span><span class="n">cell</span><span class="p">,</span>
+        <span class="n">atomic_species</span><span class="o">=</span><span class="p">[</span><span class="n">Species</span><span class="p">(</span><span class="s2">&quot;Al&quot;</span><span class="p">,</span> <span class="n">_ATOMIC_MASSES</span><span class="p">[</span><span class="s2">&quot;Al&quot;</span><span class="p">],</span> <span class="n">pseudo_file</span><span class="p">)],</span>
+        <span class="n">atomic_positions</span><span class="o">=</span><span class="n">atoms</span><span class="p">,</span>
+        <span class="n">atomic_positions_mode</span><span class="o">=</span><span class="s2">&quot;crystal&quot;</span><span class="p">,</span>
+        <span class="n">k_points_mode</span><span class="o">=</span><span class="s2">&quot;automatic&quot;</span><span class="p">,</span>
+        <span class="n">k_points</span><span class="o">=</span><span class="n">k_points</span><span class="p">,</span>
+        <span class="n">cell_parameters</span><span class="o">=</span><span class="n">cell_vectors</span><span class="p">,</span>
+        <span class="n">cell_parameters_mode</span><span class="o">=</span><span class="s2">&quot;angstrom&quot;</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="silicon_bands_workflow">
+<a class="viewcode-back" href="../../api.html#nanohubqe.silicon_bands_workflow">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">silicon_bands_workflow</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">a</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.43</span><span class="p">,</span>
+    <span class="n">ecutwfc</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">45.0</span><span class="p">,</span>
+    <span class="n">ecutrho</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">scf_k_points</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+    <span class="n">pseudo_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Si.pbe-n-kjpaw_psl.1.0.0.UPF&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;si_bands&quot;</span><span class="p">,</span>
+    <span class="n">pseudo_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./pseudo&quot;</span><span class="p">,</span>
+    <span class="n">outdir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./tmp&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QEWorkflow</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Two-step silicon band structure workflow: SCF then BANDS.&quot;&quot;&quot;</span>
+
+    <span class="n">scf_deck</span> <span class="o">=</span> <span class="n">silicon_scf</span><span class="p">(</span>
+        <span class="n">a</span><span class="o">=</span><span class="n">a</span><span class="p">,</span>
+        <span class="n">ecutwfc</span><span class="o">=</span><span class="n">ecutwfc</span><span class="p">,</span>
+        <span class="n">ecutrho</span><span class="o">=</span><span class="n">ecutrho</span><span class="p">,</span>
+        <span class="n">k_points</span><span class="o">=</span><span class="n">scf_k_points</span><span class="p">,</span>
+        <span class="n">pseudo_file</span><span class="o">=</span><span class="n">pseudo_file</span><span class="p">,</span>
+        <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;scf&quot;</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">ecutrho</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ecutrho</span> <span class="o">=</span> <span class="mf">8.0</span> <span class="o">*</span> <span class="n">ecutwfc</span>
+
+    <span class="n">cell</span> <span class="o">=</span> <span class="n">_silicon_cell</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+
+    <span class="n">bands_control</span> <span class="o">=</span> <span class="n">_default_control</span><span class="p">(</span>
+        <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;bands&quot;</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">bands_system</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;ecutwfc&quot;</span><span class="p">:</span> <span class="n">ecutwfc</span><span class="p">,</span>
+        <span class="s2">&quot;ecutrho&quot;</span><span class="p">:</span> <span class="n">ecutrho</span><span class="p">,</span>
+        <span class="s2">&quot;occupations&quot;</span><span class="p">:</span> <span class="s2">&quot;fixed&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;nbnd&quot;</span><span class="p">:</span> <span class="mi">12</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">bands_k_path</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>  <span class="c1"># Gamma</span>
+        <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>  <span class="c1"># X</span>
+        <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>  <span class="c1"># W</span>
+        <span class="p">(</span><span class="mf">0.375</span><span class="p">,</span> <span class="mf">0.375</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>  <span class="c1"># K</span>
+        <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>  <span class="c1"># Gamma</span>
+        <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>  <span class="c1"># L</span>
+        <span class="p">(</span><span class="mf">0.625</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.625</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>  <span class="c1"># U</span>
+        <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>  <span class="c1"># W</span>
+        <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>  <span class="c1"># L</span>
+        <span class="p">(</span><span class="mf">0.375</span><span class="p">,</span> <span class="mf">0.375</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>  <span class="c1"># K</span>
+    <span class="p">]</span>
+
+    <span class="n">bands_deck</span> <span class="o">=</span> <span class="n">PWInputDeck</span><span class="p">(</span>
+        <span class="n">control</span><span class="o">=</span><span class="n">bands_control</span><span class="p">,</span>
+        <span class="n">system</span><span class="o">=</span><span class="n">bands_system</span><span class="p">,</span>
+        <span class="n">electrons</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;conv_thr&quot;</span><span class="p">:</span> <span class="mf">1.0e-10</span><span class="p">,</span> <span class="s2">&quot;mixing_beta&quot;</span><span class="p">:</span> <span class="mf">0.3</span><span class="p">},</span>
+        <span class="n">atomic_species</span><span class="o">=</span><span class="p">[</span><span class="n">Species</span><span class="p">(</span><span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="n">_ATOMIC_MASSES</span><span class="p">[</span><span class="s2">&quot;Si&quot;</span><span class="p">],</span> <span class="n">pseudo_file</span><span class="p">)],</span>
+        <span class="n">atomic_positions</span><span class="o">=</span><span class="p">[</span><span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span> <span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">))],</span>
+        <span class="n">atomic_positions_mode</span><span class="o">=</span><span class="s2">&quot;crystal&quot;</span><span class="p">,</span>
+        <span class="n">k_points_mode</span><span class="o">=</span><span class="s2">&quot;crystal_b&quot;</span><span class="p">,</span>
+        <span class="n">k_points</span><span class="o">=</span><span class="n">bands_k_path</span><span class="p">,</span>
+        <span class="n">cell_parameters</span><span class="o">=</span><span class="n">cell</span><span class="p">,</span>
+        <span class="n">cell_parameters_mode</span><span class="o">=</span><span class="s2">&quot;angstrom&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">QEWorkflow</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;silicon_bands&quot;</span><span class="p">,</span>
+        <span class="n">steps</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;scf&quot;</span><span class="p">:</span> <span class="n">scf_deck</span><span class="p">,</span> <span class="s2">&quot;bands&quot;</span><span class="p">:</span> <span class="n">bands_deck</span><span class="p">},</span>
+        <span class="n">order</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;scf&quot;</span><span class="p">,</span> <span class="s2">&quot;bands&quot;</span><span class="p">],</span>
+        <span class="n">notes</span><span class="o">=</span><span class="s2">&quot;Run bands.x and plotting utilities after pw.x bands step to post-process eigenvalues.&quot;</span><span class="p">,</span>
+        <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;material&quot;</span><span class="p">:</span> <span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="s2">&quot;workflow_type&quot;</span><span class="p">:</span> <span class="s2">&quot;bands&quot;</span><span class="p">},</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="silicon_eos_workflow">
+<a class="viewcode-back" href="../../api.html#nanohubqe.silicon_eos_workflow">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">silicon_eos_workflow</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">a0</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.43</span><span class="p">,</span>
+    <span class="n">scale_factors</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.94</span><span class="p">,</span> <span class="mf">0.96</span><span class="p">,</span> <span class="mf">0.98</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.02</span><span class="p">,</span> <span class="mf">1.04</span><span class="p">,</span> <span class="mf">1.06</span><span class="p">),</span>
+    <span class="n">ecutwfc</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">45.0</span><span class="p">,</span>
+    <span class="n">ecutrho</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">k_points</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+    <span class="n">pseudo_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Si.pbe-n-kjpaw_psl.1.0.0.UPF&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;si_eos&quot;</span><span class="p">,</span>
+    <span class="n">pseudo_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./pseudo&quot;</span><span class="p">,</span>
+    <span class="n">outdir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./tmp&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QEWorkflow</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Silicon equation-of-state workflow using a lattice-constant sweep.&quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">scale_factors</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;scale_factors must contain at least one value&quot;</span><span class="p">)</span>
+
+    <span class="n">steps</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">PWInputDeck</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">order</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">scale</span> <span class="ow">in</span> <span class="n">scale_factors</span><span class="p">:</span>
+        <span class="n">lattice</span> <span class="o">=</span> <span class="n">a0</span> <span class="o">*</span> <span class="n">scale</span>
+        <span class="n">tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">scale</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">,</span> <span class="s2">&quot;p&quot;</span><span class="p">)</span>
+        <span class="n">step_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;scf_a</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">deck</span> <span class="o">=</span> <span class="n">silicon_scf</span><span class="p">(</span>
+            <span class="n">a</span><span class="o">=</span><span class="n">lattice</span><span class="p">,</span>
+            <span class="n">ecutwfc</span><span class="o">=</span><span class="n">ecutwfc</span><span class="p">,</span>
+            <span class="n">ecutrho</span><span class="o">=</span><span class="n">ecutrho</span><span class="p">,</span>
+            <span class="n">k_points</span><span class="o">=</span><span class="n">k_points</span><span class="p">,</span>
+            <span class="n">pseudo_file</span><span class="o">=</span><span class="n">pseudo_file</span><span class="p">,</span>
+            <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;scf&quot;</span><span class="p">,</span>
+            <span class="n">prefix</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+            <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">steps</span><span class="p">[</span><span class="n">step_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">deck</span>
+        <span class="n">order</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">step_name</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">QEWorkflow</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;silicon_eos&quot;</span><span class="p">,</span>
+        <span class="n">steps</span><span class="o">=</span><span class="n">steps</span><span class="p">,</span>
+        <span class="n">order</span><span class="o">=</span><span class="n">order</span><span class="p">,</span>
+        <span class="n">notes</span><span class="o">=</span><span class="s2">&quot;Extract final total energies and fit E(V) (e.g., Birch-Murnaghan).&quot;</span><span class="p">,</span>
+        <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;material&quot;</span><span class="p">:</span> <span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="s2">&quot;workflow_type&quot;</span><span class="p">:</span> <span class="s2">&quot;equation_of_state&quot;</span><span class="p">},</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="aluminum_dos_pdos_workflow">
+<a class="viewcode-back" href="../../api.html#nanohubqe.aluminum_dos_pdos_workflow">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">aluminum_dos_pdos_workflow</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">a</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">4.05</span><span class="p">,</span>
+    <span class="n">ecutwfc</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">45.0</span><span class="p">,</span>
+    <span class="n">ecutrho</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">scf_k_points</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+    <span class="n">nscf_k_points</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">24</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+    <span class="n">pseudo_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Al.pbe-n-kjpaw_psl.1.0.0.UPF&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;al_dos&quot;</span><span class="p">,</span>
+    <span class="n">pseudo_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./pseudo&quot;</span><span class="p">,</span>
+    <span class="n">outdir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./tmp&quot;</span><span class="p">,</span>
+    <span class="n">dos_emin</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="o">-</span><span class="mf">15.0</span><span class="p">,</span>
+    <span class="n">dos_emax</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">15.0</span><span class="p">,</span>
+    <span class="n">dos_deltae</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QEWorkflow</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Metal DOS/PDOS workflow: SCF -&gt; NSCF -&gt; DOS/PROJWFC post-processing.&quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">ecutrho</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ecutrho</span> <span class="o">=</span> <span class="mf">8.0</span> <span class="o">*</span> <span class="n">ecutwfc</span>
+
+    <span class="n">cell_vectors</span> <span class="o">=</span> <span class="p">[(</span><span class="n">a</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">a</span><span class="p">)]</span>
+    <span class="n">atoms</span> <span class="o">=</span> <span class="n">_aluminum_fcc_atoms</span><span class="p">()</span>
+
+    <span class="n">scf_control</span> <span class="o">=</span> <span class="n">_default_control</span><span class="p">(</span>
+        <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;scf&quot;</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">nscf_control</span> <span class="o">=</span> <span class="n">_default_control</span><span class="p">(</span>
+        <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;nscf&quot;</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">scf_system</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;ecutwfc&quot;</span><span class="p">:</span> <span class="n">ecutwfc</span><span class="p">,</span>
+        <span class="s2">&quot;ecutrho&quot;</span><span class="p">:</span> <span class="n">ecutrho</span><span class="p">,</span>
+        <span class="s2">&quot;occupations&quot;</span><span class="p">:</span> <span class="s2">&quot;smearing&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;smearing&quot;</span><span class="p">:</span> <span class="s2">&quot;mv&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;degauss&quot;</span><span class="p">:</span> <span class="mf">0.02</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">nscf_system</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;ecutwfc&quot;</span><span class="p">:</span> <span class="n">ecutwfc</span><span class="p">,</span>
+        <span class="s2">&quot;ecutrho&quot;</span><span class="p">:</span> <span class="n">ecutrho</span><span class="p">,</span>
+        <span class="s2">&quot;occupations&quot;</span><span class="p">:</span> <span class="s2">&quot;tetrahedra&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;nbnd&quot;</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">scf_deck</span> <span class="o">=</span> <span class="n">PWInputDeck</span><span class="p">(</span>
+        <span class="n">control</span><span class="o">=</span><span class="n">scf_control</span><span class="p">,</span>
+        <span class="n">system</span><span class="o">=</span><span class="n">scf_system</span><span class="p">,</span>
+        <span class="n">electrons</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;conv_thr&quot;</span><span class="p">:</span> <span class="mf">1.0e-10</span><span class="p">,</span> <span class="s2">&quot;mixing_beta&quot;</span><span class="p">:</span> <span class="mf">0.3</span><span class="p">},</span>
+        <span class="n">atomic_species</span><span class="o">=</span><span class="p">[</span><span class="n">Species</span><span class="p">(</span><span class="s2">&quot;Al&quot;</span><span class="p">,</span> <span class="n">_ATOMIC_MASSES</span><span class="p">[</span><span class="s2">&quot;Al&quot;</span><span class="p">],</span> <span class="n">pseudo_file</span><span class="p">)],</span>
+        <span class="n">atomic_positions</span><span class="o">=</span><span class="n">atoms</span><span class="p">,</span>
+        <span class="n">atomic_positions_mode</span><span class="o">=</span><span class="s2">&quot;crystal&quot;</span><span class="p">,</span>
+        <span class="n">k_points_mode</span><span class="o">=</span><span class="s2">&quot;automatic&quot;</span><span class="p">,</span>
+        <span class="n">k_points</span><span class="o">=</span><span class="n">scf_k_points</span><span class="p">,</span>
+        <span class="n">cell_parameters</span><span class="o">=</span><span class="n">cell_vectors</span><span class="p">,</span>
+        <span class="n">cell_parameters_mode</span><span class="o">=</span><span class="s2">&quot;angstrom&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">nscf_deck</span> <span class="o">=</span> <span class="n">PWInputDeck</span><span class="p">(</span>
+        <span class="n">control</span><span class="o">=</span><span class="n">nscf_control</span><span class="p">,</span>
+        <span class="n">system</span><span class="o">=</span><span class="n">nscf_system</span><span class="p">,</span>
+        <span class="n">electrons</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;conv_thr&quot;</span><span class="p">:</span> <span class="mf">1.0e-10</span><span class="p">,</span> <span class="s2">&quot;mixing_beta&quot;</span><span class="p">:</span> <span class="mf">0.3</span><span class="p">},</span>
+        <span class="n">atomic_species</span><span class="o">=</span><span class="p">[</span><span class="n">Species</span><span class="p">(</span><span class="s2">&quot;Al&quot;</span><span class="p">,</span> <span class="n">_ATOMIC_MASSES</span><span class="p">[</span><span class="s2">&quot;Al&quot;</span><span class="p">],</span> <span class="n">pseudo_file</span><span class="p">)],</span>
+        <span class="n">atomic_positions</span><span class="o">=</span><span class="n">atoms</span><span class="p">,</span>
+        <span class="n">atomic_positions_mode</span><span class="o">=</span><span class="s2">&quot;crystal&quot;</span><span class="p">,</span>
+        <span class="n">k_points_mode</span><span class="o">=</span><span class="s2">&quot;automatic&quot;</span><span class="p">,</span>
+        <span class="n">k_points</span><span class="o">=</span><span class="n">nscf_k_points</span><span class="p">,</span>
+        <span class="n">cell_parameters</span><span class="o">=</span><span class="n">cell_vectors</span><span class="p">,</span>
+        <span class="n">cell_parameters_mode</span><span class="o">=</span><span class="s2">&quot;angstrom&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">dos_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;DOS</span>
+<span class="s2">  prefix = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  outdir = &#39;</span><span class="si">{</span><span class="n">outdir</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  fildos = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.dos&#39;,</span>
+<span class="s2">  Emin = </span><span class="si">{</span><span class="n">dos_emin</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">  Emax = </span><span class="si">{</span><span class="n">dos_emax</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">  DeltaE = </span><span class="si">{</span><span class="n">dos_deltae</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">/</span>
+<span class="s2">&quot;&quot;&quot;</span>
+    <span class="n">projwfc_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;PROJWFC</span>
+<span class="s2">  prefix = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  outdir = &#39;</span><span class="si">{</span><span class="n">outdir</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  filpdos = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.pdos&#39;,</span>
+<span class="s2">  DeltaE = </span><span class="si">{</span><span class="n">dos_deltae</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">/</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+    <span class="k">return</span> <span class="n">QEWorkflow</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;aluminum_dos_pdos&quot;</span><span class="p">,</span>
+        <span class="n">steps</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">&quot;scf&quot;</span><span class="p">:</span> <span class="n">scf_deck</span><span class="p">,</span>
+            <span class="s2">&quot;nscf&quot;</span><span class="p">:</span> <span class="n">nscf_deck</span><span class="p">,</span>
+            <span class="s2">&quot;dos&quot;</span><span class="p">:</span> <span class="n">QEStep</span><span class="p">(</span>
+                <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;dos.x&quot;</span><span class="p">,</span>
+                <span class="n">input_text</span><span class="o">=</span><span class="n">dos_input</span><span class="p">,</span>
+                <span class="n">expected_output_files</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.dos&quot;</span><span class="p">],</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;projwfc&quot;</span><span class="p">:</span> <span class="n">QEStep</span><span class="p">(</span>
+                <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;projwfc.x&quot;</span><span class="p">,</span>
+                <span class="n">input_text</span><span class="o">=</span><span class="n">projwfc_input</span><span class="p">,</span>
+                <span class="n">expected_output_globs</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.pdos*&quot;</span><span class="p">],</span>
+            <span class="p">),</span>
+        <span class="p">},</span>
+        <span class="n">order</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;scf&quot;</span><span class="p">,</span> <span class="s2">&quot;nscf&quot;</span><span class="p">,</span> <span class="s2">&quot;dos&quot;</span><span class="p">,</span> <span class="s2">&quot;projwfc&quot;</span><span class="p">],</span>
+        <span class="n">notes</span><span class="o">=</span><span class="s2">&quot;Run SCF then dense NSCF before DOS/PDOS post-processing.&quot;</span><span class="p">,</span>
+        <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;material&quot;</span><span class="p">:</span> <span class="s2">&quot;Al&quot;</span><span class="p">,</span> <span class="s2">&quot;workflow_type&quot;</span><span class="p">:</span> <span class="s2">&quot;dos_pdos&quot;</span><span class="p">},</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="silicon_phonon_dispersion_workflow">
+<a class="viewcode-back" href="../../api.html#nanohubqe.silicon_phonon_dispersion_workflow">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">silicon_phonon_dispersion_workflow</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">a</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.43</span><span class="p">,</span>
+    <span class="n">ecutwfc</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">45.0</span><span class="p">,</span>
+    <span class="n">ecutrho</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">scf_k_points</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+    <span class="n">q_grid</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+    <span class="n">pseudo_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Si.pbe-n-kjpaw_psl.1.0.0.UPF&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;si_ph&quot;</span><span class="p">,</span>
+    <span class="n">pseudo_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./pseudo&quot;</span><span class="p">,</span>
+    <span class="n">outdir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./tmp&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QEWorkflow</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Silicon phonon workflow: SCF -&gt; PH -&gt; Q2R -&gt; MATDYN.&quot;&quot;&quot;</span>
+
+    <span class="n">scf_deck</span> <span class="o">=</span> <span class="n">silicon_scf</span><span class="p">(</span>
+        <span class="n">a</span><span class="o">=</span><span class="n">a</span><span class="p">,</span>
+        <span class="n">ecutwfc</span><span class="o">=</span><span class="n">ecutwfc</span><span class="p">,</span>
+        <span class="n">ecutrho</span><span class="o">=</span><span class="n">ecutrho</span><span class="p">,</span>
+        <span class="n">k_points</span><span class="o">=</span><span class="n">scf_k_points</span><span class="p">,</span>
+        <span class="n">pseudo_file</span><span class="o">=</span><span class="n">pseudo_file</span><span class="p">,</span>
+        <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;scf&quot;</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">nq1</span><span class="p">,</span> <span class="n">nq2</span><span class="p">,</span> <span class="n">nq3</span> <span class="o">=</span> <span class="n">q_grid</span>
+    <span class="n">ph_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;INPUTPH</span>
+<span class="s2">  tr2_ph = 1.0e-14,</span>
+<span class="s2">  prefix = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  outdir = &#39;</span><span class="si">{</span><span class="n">outdir</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  fildyn = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.dyn&#39;,</span>
+<span class="s2">  ldisp = .true.,</span>
+<span class="s2">  nq1 = </span><span class="si">{</span><span class="n">nq1</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">  nq2 = </span><span class="si">{</span><span class="n">nq2</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">  nq3 = </span><span class="si">{</span><span class="n">nq3</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">/</span>
+<span class="s2">&quot;&quot;&quot;</span>
+    <span class="n">q2r_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;INPUT</span>
+<span class="s2">  fildyn = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.dyn&#39;,</span>
+<span class="s2">  zasr = &#39;simple&#39;,</span>
+<span class="s2">  flfrc = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.fc&#39;,</span>
+<span class="s2">/</span>
+<span class="s2">&quot;&quot;&quot;</span>
+    <span class="n">matdyn_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;INPUT</span>
+<span class="s2">  asr = &#39;simple&#39;,</span>
+<span class="s2">  flfrc = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.fc&#39;,</span>
+<span class="s2">  flfrq = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.freq&#39;,</span>
+<span class="s2">  q_in_band_form = .true.,</span>
+<span class="s2">/</span>
+<span class="s2">6</span>
+<span class="s2">0.0000 0.0000 0.0000 20</span>
+<span class="s2">0.5000 0.0000 0.5000 20</span>
+<span class="s2">0.5000 0.2500 0.7500 20</span>
+<span class="s2">0.3750 0.3750 0.7500 20</span>
+<span class="s2">0.0000 0.0000 0.0000 20</span>
+<span class="s2">0.5000 0.5000 0.5000 20</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+    <span class="k">return</span> <span class="n">QEWorkflow</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;silicon_phonon_dispersion&quot;</span><span class="p">,</span>
+        <span class="n">steps</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">&quot;scf&quot;</span><span class="p">:</span> <span class="n">scf_deck</span><span class="p">,</span>
+            <span class="s2">&quot;ph&quot;</span><span class="p">:</span> <span class="n">QEStep</span><span class="p">(</span>
+                <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;ph.x&quot;</span><span class="p">,</span>
+                <span class="n">input_text</span><span class="o">=</span><span class="n">ph_input</span><span class="p">,</span>
+                <span class="n">expected_output_globs</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.dyn*&quot;</span><span class="p">],</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;q2r&quot;</span><span class="p">:</span> <span class="n">QEStep</span><span class="p">(</span>
+                <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;q2r.x&quot;</span><span class="p">,</span>
+                <span class="n">input_text</span><span class="o">=</span><span class="n">q2r_input</span><span class="p">,</span>
+                <span class="n">expected_output_files</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.fc&quot;</span><span class="p">],</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;matdyn&quot;</span><span class="p">:</span> <span class="n">QEStep</span><span class="p">(</span>
+                <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;matdyn.x&quot;</span><span class="p">,</span>
+                <span class="n">input_text</span><span class="o">=</span><span class="n">matdyn_input</span><span class="p">,</span>
+                <span class="n">expected_output_files</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.freq&quot;</span><span class="p">],</span>
+            <span class="p">),</span>
+        <span class="p">},</span>
+        <span class="n">order</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;scf&quot;</span><span class="p">,</span> <span class="s2">&quot;ph&quot;</span><span class="p">,</span> <span class="s2">&quot;q2r&quot;</span><span class="p">,</span> <span class="s2">&quot;matdyn&quot;</span><span class="p">],</span>
+        <span class="n">notes</span><span class="o">=</span><span class="s2">&quot;Post-process generated files to inspect phonon frequencies along high-symmetry paths.&quot;</span><span class="p">,</span>
+        <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;material&quot;</span><span class="p">:</span> <span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="s2">&quot;workflow_type&quot;</span><span class="p">:</span> <span class="s2">&quot;phonon_dispersion&quot;</span><span class="p">},</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="silicon_bands_dos_reference_workflow">
+<a class="viewcode-back" href="../../api.html#nanohubqe.silicon_bands_dos_reference_workflow">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">silicon_bands_dos_reference_workflow</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">a</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.43</span><span class="p">,</span>
+    <span class="n">ecutwfc</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">16.0</span><span class="p">,</span>
+    <span class="n">ecutrho</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">96.0</span><span class="p">,</span>
+    <span class="n">nbnd</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+    <span class="n">scf_k_points</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+    <span class="n">pseudo_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Si.UPF&quot;</span><span class="p">,</span>
+    <span class="n">title</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Silicon band structure&quot;</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;qe&quot;</span><span class="p">,</span>
+    <span class="n">pseudo_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./pseudo&quot;</span><span class="p">,</span>
+    <span class="n">outdir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./tmp&quot;</span><span class="p">,</span>
+    <span class="n">conv_thr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0e-6</span><span class="p">,</span>
+    <span class="n">dos_emin</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="o">-</span><span class="mf">6.0</span><span class="p">,</span>
+    <span class="n">dos_emax</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">10.0</span><span class="p">,</span>
+    <span class="n">dos_deltae</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">,</span>
+    <span class="n">bands_k_path</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">include_plotband</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">plotband_fermi_ev</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">plotband_weight</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QEWorkflow</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Reference silicon SCF + DOS + bands workflow mirroring the nanoHUB dftqe pattern.&quot;&quot;&quot;</span>
+
+    <span class="n">celldm1</span> <span class="o">=</span> <span class="n">a</span> <span class="o">*</span> <span class="n">_BOHR_PER_ANGSTROM</span>
+    <span class="n">common_system</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+        <span class="s2">&quot;celldm(1)&quot;</span><span class="p">:</span> <span class="n">celldm1</span><span class="p">,</span>
+        <span class="s2">&quot;ecutwfc&quot;</span><span class="p">:</span> <span class="n">ecutwfc</span><span class="p">,</span>
+        <span class="s2">&quot;ecutrho&quot;</span><span class="p">:</span> <span class="n">ecutrho</span><span class="p">,</span>
+        <span class="s2">&quot;nbnd&quot;</span><span class="p">:</span> <span class="n">nbnd</span><span class="p">,</span>
+        <span class="s2">&quot;occupations&quot;</span><span class="p">:</span> <span class="s2">&quot;tetrahedra&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;degauss&quot;</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">common_electrons</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;conv_thr&quot;</span><span class="p">:</span> <span class="n">conv_thr</span><span class="p">}</span>
+    <span class="n">common_species</span> <span class="o">=</span> <span class="p">[</span><span class="n">Species</span><span class="p">(</span><span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="n">_ATOMIC_MASSES</span><span class="p">[</span><span class="s2">&quot;Si&quot;</span><span class="p">],</span> <span class="n">pseudo_file</span><span class="p">)]</span>
+    <span class="n">common_positions</span> <span class="o">=</span> <span class="p">[</span><span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span> <span class="n">Atom</span><span class="p">(</span><span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">))]</span>
+
+    <span class="n">scf_control</span> <span class="o">=</span> <span class="n">_default_control</span><span class="p">(</span>
+        <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;scf&quot;</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">scf_control</span><span class="p">[</span><span class="s2">&quot;title&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">title</span>
+    <span class="n">scf_deck</span> <span class="o">=</span> <span class="n">PWInputDeck</span><span class="p">(</span>
+        <span class="n">control</span><span class="o">=</span><span class="n">scf_control</span><span class="p">,</span>
+        <span class="n">system</span><span class="o">=</span><span class="n">common_system</span><span class="p">,</span>
+        <span class="n">electrons</span><span class="o">=</span><span class="n">common_electrons</span><span class="p">,</span>
+        <span class="n">atomic_species</span><span class="o">=</span><span class="n">common_species</span><span class="p">,</span>
+        <span class="n">atomic_positions</span><span class="o">=</span><span class="n">common_positions</span><span class="p">,</span>
+        <span class="n">atomic_positions_mode</span><span class="o">=</span><span class="s2">&quot;crystal&quot;</span><span class="p">,</span>
+        <span class="n">k_points_mode</span><span class="o">=</span><span class="s2">&quot;automatic&quot;</span><span class="p">,</span>
+        <span class="n">k_points</span><span class="o">=</span><span class="n">scf_k_points</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">dos_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;INPUTPP</span>
+<span class="s2">  prefix = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  outdir = &#39;</span><span class="si">{</span><span class="n">outdir</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  Emax = </span><span class="si">{</span><span class="n">dos_emax</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">  Emin = </span><span class="si">{</span><span class="n">dos_emin</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">  DeltaE = </span><span class="si">{</span><span class="n">dos_deltae</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">/</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">bands_k_path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">bands_k_path</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span>  <span class="c1"># L</span>
+            <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span>  <span class="c1"># Gamma</span>
+            <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span>  <span class="c1"># X</span>
+        <span class="p">]</span>
+
+    <span class="n">bands_control</span> <span class="o">=</span> <span class="n">_default_control</span><span class="p">(</span>
+        <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;bands&quot;</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">bands_control</span><span class="p">[</span><span class="s2">&quot;title&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">title</span>
+    <span class="n">bands_deck</span> <span class="o">=</span> <span class="n">PWInputDeck</span><span class="p">(</span>
+        <span class="n">control</span><span class="o">=</span><span class="n">bands_control</span><span class="p">,</span>
+        <span class="n">system</span><span class="o">=</span><span class="n">common_system</span><span class="p">,</span>
+        <span class="n">electrons</span><span class="o">=</span><span class="n">common_electrons</span><span class="p">,</span>
+        <span class="n">atomic_species</span><span class="o">=</span><span class="n">common_species</span><span class="p">,</span>
+        <span class="n">atomic_positions</span><span class="o">=</span><span class="n">common_positions</span><span class="p">,</span>
+        <span class="n">atomic_positions_mode</span><span class="o">=</span><span class="s2">&quot;crystal&quot;</span><span class="p">,</span>
+        <span class="n">k_points_mode</span><span class="o">=</span><span class="s2">&quot;tpiba_b&quot;</span><span class="p">,</span>
+        <span class="n">k_points</span><span class="o">=</span><span class="n">bands_k_path</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">bands_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;INPUTPP</span>
+<span class="s2">  prefix = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  outdir = &#39;</span><span class="si">{</span><span class="n">outdir</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  filband = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.dat&#39;,</span>
+<span class="s2">/</span>
+<span class="s2">&quot;&quot;&quot;</span>
+
+    <span class="n">steps</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">QEStep</span> <span class="o">|</span> <span class="n">PWInputDeck</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;scf&quot;</span><span class="p">:</span> <span class="n">scf_deck</span><span class="p">,</span>
+        <span class="s2">&quot;dos&quot;</span><span class="p">:</span> <span class="n">QEStep</span><span class="p">(</span>
+            <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;dos.x&quot;</span><span class="p">,</span>
+            <span class="n">input_text</span><span class="o">=</span><span class="n">dos_input</span><span class="p">,</span>
+            <span class="n">expected_output_files</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.dos&quot;</span><span class="p">],</span>
+        <span class="p">),</span>
+        <span class="s2">&quot;bands_pw&quot;</span><span class="p">:</span> <span class="n">bands_deck</span><span class="p">,</span>
+        <span class="s2">&quot;bands_pp&quot;</span><span class="p">:</span> <span class="n">QEStep</span><span class="p">(</span>
+            <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;bands.x&quot;</span><span class="p">,</span>
+            <span class="n">input_text</span><span class="o">=</span><span class="n">bands_input</span><span class="p">,</span>
+            <span class="n">expected_output_files</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.dat&quot;</span><span class="p">],</span>
+        <span class="p">),</span>
+    <span class="p">}</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;scf&quot;</span><span class="p">,</span> <span class="s2">&quot;dos&quot;</span><span class="p">,</span> <span class="s2">&quot;bands_pw&quot;</span><span class="p">,</span> <span class="s2">&quot;bands_pp&quot;</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">include_plotband</span><span class="p">:</span>
+        <span class="n">plotband_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.dat</span>
+<span class="s2">-1000 1000</span>
+<span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.xmgr</span>
+<span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.ps</span>
+<span class="si">{</span><span class="n">plotband_fermi_ev</span><span class="si">}</span>
+<span class="si">{</span><span class="n">plotband_weight</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">plotband_fermi_ev</span><span class="si">}</span>
+<span class="s2">&quot;&quot;&quot;</span>
+        <span class="n">steps</span><span class="p">[</span><span class="s2">&quot;plotband&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">QEStep</span><span class="p">(</span>
+            <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;plotband.x&quot;</span><span class="p">,</span>
+            <span class="n">input_text</span><span class="o">=</span><span class="n">plotband_input</span><span class="p">,</span>
+            <span class="n">input_mode</span><span class="o">=</span><span class="s2">&quot;stdin&quot;</span><span class="p">,</span>
+            <span class="n">expected_output_files</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.xmgr&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.ps&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">order</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;plotband&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">QEWorkflow</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="s2">&quot;silicon_bands_dos_reference&quot;</span><span class="p">,</span>
+        <span class="n">steps</span><span class="o">=</span><span class="n">steps</span><span class="p">,</span>
+        <span class="n">order</span><span class="o">=</span><span class="n">order</span><span class="p">,</span>
+        <span class="n">notes</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;Reference flow matching nanoHUB dftqe silicon case: &quot;</span>
+            <span class="s2">&quot;SCF -&gt; DOS -&gt; bands (pw.x) -&gt; bands.x -&gt; plotband.x.&quot;</span>
+        <span class="p">),</span>
+        <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;material&quot;</span><span class="p">:</span> <span class="s2">&quot;Si&quot;</span><span class="p">,</span> <span class="s2">&quot;workflow_type&quot;</span><span class="p">:</span> <span class="s2">&quot;bands_dos_reference&quot;</span><span class="p">},</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="bulk_electronic_phonon_workflow">
+<a class="viewcode-back" href="../../api.html#nanohubqe.bulk_electronic_phonon_workflow">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">bulk_electronic_phonon_workflow</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">symbol</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Si&quot;</span><span class="p">,</span>
+    <span class="n">structure</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;diamond&quot;</span><span class="p">,</span>
+    <span class="n">a</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.43</span><span class="p">,</span>
+    <span class="n">mass_amu</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">pseudo_file</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">title</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;qe&quot;</span><span class="p">,</span>
+    <span class="n">pseudo_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./pseudo&quot;</span><span class="p">,</span>
+    <span class="n">outdir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;./tmp&quot;</span><span class="p">,</span>
+    <span class="n">ecutwfc</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">16.0</span><span class="p">,</span>
+    <span class="n">ecutrho</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">96.0</span><span class="p">,</span>
+    <span class="n">nbnd</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+    <span class="n">occupations</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;tetrahedra&quot;</span><span class="p">,</span>
+    <span class="n">degauss</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">conv_thr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0e-6</span><span class="p">,</span>
+    <span class="n">scf_k_points</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+    <span class="n">include_dos</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">dos_emin</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="o">-</span><span class="mf">6.0</span><span class="p">,</span>
+    <span class="n">dos_emax</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">10.0</span><span class="p">,</span>
+    <span class="n">dos_deltae</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">,</span>
+    <span class="n">include_bands</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">bands_k_path</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">include_plotband</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">plotband_fermi_ev</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">plotband_weight</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
+    <span class="n">include_phonon</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="n">phonon_q_grid</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+    <span class="n">phonon_q_path</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">phonon_q_num</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">21</span><span class="p">,</span>
+    <span class="n">phonon_tr2_ph</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0e-12</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">QEWorkflow</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;UI-like configurable bulk workflow with structure and optional phonons.&quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">mass_amu</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">symbol</span> <span class="ow">in</span> <span class="n">_ATOMIC_MASSES</span><span class="p">:</span>
+            <span class="n">mass_amu</span> <span class="o">=</span> <span class="n">_ATOMIC_MASSES</span><span class="p">[</span><span class="n">symbol</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;mass_amu is required for symbol &#39;</span><span class="si">{</span><span class="n">symbol</span><span class="si">}</span><span class="s2">&#39;. Add it explicitly.&quot;</span>
+            <span class="p">)</span>
+    <span class="k">if</span> <span class="n">pseudo_file</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">pseudo_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">symbol</span><span class="si">}</span><span class="s2">.UPF&quot;</span>
+    <span class="k">if</span> <span class="n">title</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">title</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">symbol</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">structure</span><span class="si">}</span><span class="s2"> electronic structure&quot;</span>
+
+    <span class="n">ibrav</span><span class="p">,</span> <span class="n">atoms</span> <span class="o">=</span> <span class="n">_bulk_atoms</span><span class="p">(</span><span class="n">symbol</span><span class="p">,</span> <span class="n">structure</span><span class="p">)</span>
+    <span class="n">celldm1</span> <span class="o">=</span> <span class="n">a</span> <span class="o">*</span> <span class="n">_BOHR_PER_ANGSTROM</span>
+
+    <span class="n">common_system</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;ibrav&quot;</span><span class="p">:</span> <span class="n">ibrav</span><span class="p">,</span>
+        <span class="s2">&quot;celldm(1)&quot;</span><span class="p">:</span> <span class="n">celldm1</span><span class="p">,</span>
+        <span class="s2">&quot;ecutwfc&quot;</span><span class="p">:</span> <span class="n">ecutwfc</span><span class="p">,</span>
+        <span class="s2">&quot;ecutrho&quot;</span><span class="p">:</span> <span class="n">ecutrho</span><span class="p">,</span>
+        <span class="s2">&quot;nbnd&quot;</span><span class="p">:</span> <span class="n">nbnd</span><span class="p">,</span>
+        <span class="s2">&quot;occupations&quot;</span><span class="p">:</span> <span class="n">occupations</span><span class="p">,</span>
+        <span class="s2">&quot;degauss&quot;</span><span class="p">:</span> <span class="n">degauss</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">common_electrons</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;conv_thr&quot;</span><span class="p">:</span> <span class="n">conv_thr</span><span class="p">}</span>
+    <span class="n">common_species</span> <span class="o">=</span> <span class="p">[</span><span class="n">Species</span><span class="p">(</span><span class="n">symbol</span><span class="p">,</span> <span class="n">mass_amu</span><span class="p">,</span> <span class="n">pseudo_file</span><span class="p">)]</span>
+
+    <span class="n">scf_control</span> <span class="o">=</span> <span class="n">_default_control</span><span class="p">(</span>
+        <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;scf&quot;</span><span class="p">,</span>
+        <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+        <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+        <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">scf_control</span><span class="p">[</span><span class="s2">&quot;title&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">title</span>
+    <span class="n">scf_deck</span> <span class="o">=</span> <span class="n">PWInputDeck</span><span class="p">(</span>
+        <span class="n">control</span><span class="o">=</span><span class="n">scf_control</span><span class="p">,</span>
+        <span class="n">system</span><span class="o">=</span><span class="n">common_system</span><span class="p">,</span>
+        <span class="n">electrons</span><span class="o">=</span><span class="n">common_electrons</span><span class="p">,</span>
+        <span class="n">atomic_species</span><span class="o">=</span><span class="n">common_species</span><span class="p">,</span>
+        <span class="n">atomic_positions</span><span class="o">=</span><span class="n">atoms</span><span class="p">,</span>
+        <span class="n">atomic_positions_mode</span><span class="o">=</span><span class="s2">&quot;crystal&quot;</span><span class="p">,</span>
+        <span class="n">k_points_mode</span><span class="o">=</span><span class="s2">&quot;automatic&quot;</span><span class="p">,</span>
+        <span class="n">k_points</span><span class="o">=</span><span class="n">scf_k_points</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">steps</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">QEStep</span> <span class="o">|</span> <span class="n">PWInputDeck</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;scf&quot;</span><span class="p">:</span> <span class="n">scf_deck</span><span class="p">}</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;scf&quot;</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">include_dos</span><span class="p">:</span>
+        <span class="n">dos_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;INPUTPP</span>
+<span class="s2">  prefix = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  outdir = &#39;</span><span class="si">{</span><span class="n">outdir</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  Emax = </span><span class="si">{</span><span class="n">dos_emax</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">  Emin = </span><span class="si">{</span><span class="n">dos_emin</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">  DeltaE = </span><span class="si">{</span><span class="n">dos_deltae</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">/</span>
+<span class="s2">&quot;&quot;&quot;</span>
+        <span class="n">steps</span><span class="p">[</span><span class="s2">&quot;dos&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">QEStep</span><span class="p">(</span>
+            <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;dos.x&quot;</span><span class="p">,</span>
+            <span class="n">input_text</span><span class="o">=</span><span class="n">dos_input</span><span class="p">,</span>
+            <span class="n">expected_output_files</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.dos&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">order</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;dos&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">include_bands</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">bands_k_path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">bands_k_path</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span>
+            <span class="p">]</span>
+
+        <span class="n">bands_control</span> <span class="o">=</span> <span class="n">_default_control</span><span class="p">(</span>
+            <span class="n">calculation</span><span class="o">=</span><span class="s2">&quot;bands&quot;</span><span class="p">,</span>
+            <span class="n">prefix</span><span class="o">=</span><span class="n">prefix</span><span class="p">,</span>
+            <span class="n">pseudo_dir</span><span class="o">=</span><span class="n">pseudo_dir</span><span class="p">,</span>
+            <span class="n">outdir</span><span class="o">=</span><span class="n">outdir</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">bands_control</span><span class="p">[</span><span class="s2">&quot;title&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">title</span>
+        <span class="n">bands_deck</span> <span class="o">=</span> <span class="n">PWInputDeck</span><span class="p">(</span>
+            <span class="n">control</span><span class="o">=</span><span class="n">bands_control</span><span class="p">,</span>
+            <span class="n">system</span><span class="o">=</span><span class="n">common_system</span><span class="p">,</span>
+            <span class="n">electrons</span><span class="o">=</span><span class="n">common_electrons</span><span class="p">,</span>
+            <span class="n">atomic_species</span><span class="o">=</span><span class="n">common_species</span><span class="p">,</span>
+            <span class="n">atomic_positions</span><span class="o">=</span><span class="n">atoms</span><span class="p">,</span>
+            <span class="n">atomic_positions_mode</span><span class="o">=</span><span class="s2">&quot;crystal&quot;</span><span class="p">,</span>
+            <span class="n">k_points_mode</span><span class="o">=</span><span class="s2">&quot;tpiba_b&quot;</span><span class="p">,</span>
+            <span class="n">k_points</span><span class="o">=</span><span class="n">bands_k_path</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">bands_pp_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;INPUTPP</span>
+<span class="s2">  prefix = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  outdir = &#39;</span><span class="si">{</span><span class="n">outdir</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  filband = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.dat&#39;,</span>
+<span class="s2">/</span>
+<span class="s2">&quot;&quot;&quot;</span>
+        <span class="n">steps</span><span class="p">[</span><span class="s2">&quot;bands_pw&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">bands_deck</span>
+        <span class="n">steps</span><span class="p">[</span><span class="s2">&quot;bands_pp&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">QEStep</span><span class="p">(</span>
+            <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;bands.x&quot;</span><span class="p">,</span>
+            <span class="n">input_text</span><span class="o">=</span><span class="n">bands_pp_input</span><span class="p">,</span>
+            <span class="n">expected_output_files</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.dat&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">order</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="s2">&quot;bands_pw&quot;</span><span class="p">,</span> <span class="s2">&quot;bands_pp&quot;</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="n">include_plotband</span><span class="p">:</span>
+            <span class="n">plotband_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.dat</span>
+<span class="s2">-1000 1000</span>
+<span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.xmgr</span>
+<span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.ps</span>
+<span class="si">{</span><span class="n">plotband_fermi_ev</span><span class="si">}</span>
+<span class="si">{</span><span class="n">plotband_weight</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">plotband_fermi_ev</span><span class="si">}</span>
+<span class="s2">&quot;&quot;&quot;</span>
+            <span class="n">steps</span><span class="p">[</span><span class="s2">&quot;plotband&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">QEStep</span><span class="p">(</span>
+                <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;plotband.x&quot;</span><span class="p">,</span>
+                <span class="n">input_text</span><span class="o">=</span><span class="n">plotband_input</span><span class="p">,</span>
+                <span class="n">input_mode</span><span class="o">=</span><span class="s2">&quot;stdin&quot;</span><span class="p">,</span>
+                <span class="n">expected_output_files</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.xmgr&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.bands.ps&quot;</span><span class="p">],</span>
+            <span class="p">)</span>
+            <span class="n">order</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;plotband&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">include_phonon</span><span class="p">:</span>
+        <span class="n">nq1</span><span class="p">,</span> <span class="n">nq2</span><span class="p">,</span> <span class="n">nq3</span> <span class="o">=</span> <span class="n">phonon_q_grid</span>
+        <span class="n">ph_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;INPUTPH</span>
+<span class="s2">  tr2_ph = </span><span class="si">{</span><span class="n">phonon_tr2_ph</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">  prefix = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  outdir = &#39;</span><span class="si">{</span><span class="n">outdir</span><span class="si">}</span><span class="s2">&#39;,</span>
+<span class="s2">  fildyn = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.dyn&#39;,</span>
+<span class="s2">  ldisp = .true.,</span>
+<span class="s2">  nq1 = </span><span class="si">{</span><span class="n">nq1</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">  nq2 = </span><span class="si">{</span><span class="n">nq2</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">  nq3 = </span><span class="si">{</span><span class="n">nq3</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">/</span>
+<span class="s2">&quot;&quot;&quot;</span>
+        <span class="n">q2r_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;INPUT</span>
+<span class="s2">  fildyn = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.dyn&#39;,</span>
+<span class="s2">  zasr = &#39;simple&#39;,</span>
+<span class="s2">  flfrc = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.fc&#39;,</span>
+<span class="s2">/</span>
+<span class="s2">&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">phonon_q_path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">phonon_q_path</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+                <span class="p">(</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span>
+                <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+            <span class="p">]</span>
+        <span class="n">q_path_lines</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">qx</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">qy</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">qz</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">phonon_q_num</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">for</span> <span class="n">qx</span><span class="p">,</span> <span class="n">qy</span><span class="p">,</span> <span class="n">qz</span> <span class="ow">in</span> <span class="n">phonon_q_path</span>
+        <span class="p">)</span>
+        <span class="n">matdyn_input</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">&amp;INPUT</span>
+<span class="s2">  asr = &#39;simple&#39;,</span>
+<span class="s2">  flfrc = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.fc&#39;,</span>
+<span class="s2">  flfrq = &#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.freq&#39;,</span>
+<span class="s2">  q_in_band_form = .true.,</span>
+<span class="s2">/</span>
+<span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">phonon_q_path</span><span class="p">)</span><span class="si">}</span>
+<span class="si">{</span><span class="n">q_path_lines</span><span class="si">}</span>
+<span class="s2">&quot;&quot;&quot;</span>
+        <span class="n">steps</span><span class="p">[</span><span class="s2">&quot;ph&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">QEStep</span><span class="p">(</span>
+            <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;ph.x&quot;</span><span class="p">,</span>
+            <span class="n">input_text</span><span class="o">=</span><span class="n">ph_input</span><span class="p">,</span>
+            <span class="n">expected_output_globs</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.dyn*&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">steps</span><span class="p">[</span><span class="s2">&quot;q2r&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">QEStep</span><span class="p">(</span>
+            <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;q2r.x&quot;</span><span class="p">,</span>
+            <span class="n">input_text</span><span class="o">=</span><span class="n">q2r_input</span><span class="p">,</span>
+            <span class="n">expected_output_files</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.fc&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">steps</span><span class="p">[</span><span class="s2">&quot;matdyn&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">QEStep</span><span class="p">(</span>
+            <span class="n">executable</span><span class="o">=</span><span class="s2">&quot;matdyn.x&quot;</span><span class="p">,</span>
+            <span class="n">input_text</span><span class="o">=</span><span class="n">matdyn_input</span><span class="p">,</span>
+            <span class="n">expected_output_files</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">.freq&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">order</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="s2">&quot;ph&quot;</span><span class="p">,</span> <span class="s2">&quot;q2r&quot;</span><span class="p">,</span> <span class="s2">&quot;matdyn&quot;</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">QEWorkflow</span><span class="p">(</span>
+        <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">symbol</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">structure</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="si">}</span><span class="s2">_configurable&quot;</span><span class="p">,</span>
+        <span class="n">steps</span><span class="o">=</span><span class="n">steps</span><span class="p">,</span>
+        <span class="n">order</span><span class="o">=</span><span class="n">order</span><span class="p">,</span>
+        <span class="n">notes</span><span class="o">=</span><span class="p">(</span>
+            <span class="s2">&quot;Configurable bulk workflow: choose structure, then enable/disable &quot;</span>
+            <span class="s2">&quot;DOS, band-structure, and phonon branches.&quot;</span>
+        <span class="p">),</span>
+        <span class="n">metadata</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">&quot;material&quot;</span><span class="p">:</span> <span class="n">symbol</span><span class="p">,</span>
+            <span class="s2">&quot;structure&quot;</span><span class="p">:</span> <span class="n">structure</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span>
+            <span class="s2">&quot;workflow_type&quot;</span><span class="p">:</span> <span class="s2">&quot;configurable_bulk&quot;</span><span class="p">,</span>
+        <span class="p">},</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="available_templates">
+<a class="viewcode-back" href="../../api.html#nanohubqe.available_templates">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">available_templates</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Template names and short descriptions.&quot;&quot;&quot;</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;silicon_scf&quot;</span><span class="p">:</span> <span class="s2">&quot;Bulk silicon SCF with diamond primitive cell.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;graphene_relax&quot;</span><span class="p">:</span> <span class="s2">&quot;2D graphene ionic relaxation with vacuum spacing.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;aluminum_vc_relax&quot;</span><span class="p">:</span> <span class="s2">&quot;FCC aluminum variable-cell relaxation.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;silicon_bands_workflow&quot;</span><span class="p">:</span> <span class="s2">&quot;Two-step SCF + bands workflow for silicon.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;silicon_eos_workflow&quot;</span><span class="p">:</span> <span class="s2">&quot;Silicon equation-of-state lattice sweep.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;aluminum_dos_pdos_workflow&quot;</span><span class="p">:</span> <span class="s2">&quot;Aluminum SCF+NSCF with DOS/PDOS post-processing.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;silicon_phonon_dispersion_workflow&quot;</span><span class="p">:</span> <span class="s2">&quot;Silicon SCF-&gt;PH-&gt;Q2R-&gt;MATDYN phonon workflow.&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;silicon_bands_dos_reference_workflow&quot;</span><span class="p">:</span> <span class="p">(</span>
+            <span class="s2">&quot;nanoHUB-style Si SCF+DOS+bands reference workflow.&quot;</span>
+        <span class="p">),</span>
+        <span class="s2">&quot;bulk_electronic_phonon_workflow&quot;</span><span class="p">:</span> <span class="p">(</span>
+            <span class="s2">&quot;UI-like configurable bulk workflow (structure + DOS/bands/phonons toggles).&quot;</span>
+        <span class="p">),</span>
+    <span class="p">}</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">nanohub-qe</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../workflows.html">Workflows</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

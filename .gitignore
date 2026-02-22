@@ -1,0 +1,24 @@
+# Python cache/artifacts
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Environments
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local runtime files
+.mplconfig/
+*.log
+
+# macOS
+.DS_Store

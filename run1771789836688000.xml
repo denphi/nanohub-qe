@@ -1,0 +1,1804 @@
+<?xml version="1.0"?>
+<run>
+    <tool>
+        <id>dftqe</id>
+        <name>DFT calculations with Quantum ESPRESSO</name>
+        <version>
+            <identifier>2.10.1</identifier>
+            <application>
+                <revision>113</revision>
+                <svnrevision>113</svnrevision>
+                <modified>2023-08-14 11:10:37 -0700 (Mon, 14 Aug 2023)</modified>
+                <installed>2023-08-14 11:11:00 PDT</installed>
+                <directory id="top">/apps/dftqe/r113</directory>
+                <directory id="tool">/apps/dftqe/r113/rappture</directory>
+            </application>
+            <rappture>
+                <version>1.7</version>
+                <revision>6716</revision>
+                <modified>$LastChangedDate: 2019-01-04 18:14:36 -0500 (Fri, 04 Jan 2019) $</modified>
+                <language>tcl</language>
+            </rappture>
+        </version>
+        <title>nanoMaterials Simulation Toolkit - Quantum Espresso DFT calculations</title>
+        <about>
+      Use the four panels on the left to set up the simulation.
+        -Input model: specify the initial atomic model.
+        -Energy expression: level of theory, approximations and numerical accuracy.
+        -Phonons: specify phonon calculations
+        -Band Structure/DOS: specify band structure and DoS calculations
+	-Advanced Options: select serial or parallel as the simulation venue
+	--
+      Then, push Simulate button.
+        --
+      The simulation results will appear here.
+    </about>
+        <command>
+      @tool/nMST_QEwr @driver
+    </command>
+        <limits>
+            <cputime>86400</cputime>
+        </limits>
+    </tool>
+    <input>
+        <group id="InputModel">
+            <about>
+                <label>Input Geometry</label>
+            </about>
+            <!--
+      <note>
+        <contents>file://note.html</contents>
+      </note>
+      -->
+            <group id="model">
+                <about>
+                    <label>Create the model</label>
+                    <description>Please use one of the premade files or create your own.</description>
+                </about>
+                <group id="options">
+                    <about/>
+                    <loader id="geometry">
+                        <about>
+                            <label>Premade atomistic structure</label>
+                            <description>Loads pre made files into Atomic Positions and Lattice Vectors</description>
+                        </about>
+                        <!--
+            <new>premade/new.xml</new>
+            -->
+                        <example>*.xml</example>
+                        <upload>
+                            <to>input.group(InputModel).group(model).string(indeck)</to>
+                            <to>input.group(InputModel).group(model).number(lat_param_a)</to>
+                        </upload>
+                        <download>
+                            <from>input.group(InputModel).group(model).string(indeck)</from>
+                            <from>input.group(InputModel).group(model).number(lat_param_a)</from>
+                        </download>
+                        <default>Si.xml</default>
+                        <current>Si diamond</current>
+                    </loader>
+                </group>
+                <string id="ppots">
+                    <about>
+                        <enable>no</enable>
+                    </about>
+                    <default/>
+                    <current/>
+                </string>
+                <choice id="cartesian">
+                    <about>
+                        <label>Atomic Coordinates</label>
+                        <description>Determines whether atomic positions are given in fractional (cell) or Cartesian coordinates. </description>
+                    </about>
+                    <option>
+                        <about>
+                            <label>Cartesian</label>
+                        </about>
+                        <value>1</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>Fractional</label>
+                        </about>
+                        <value>0</value>
+                    </option>
+                    <default>Fractional</default>
+                    <current>0</current>
+                </choice>
+                <choice id="structure">
+                    <about>
+                        <label>Structure type</label>
+                        <description>Select a structure to be used for the unit cell</description>
+                    </about>
+                    <option>
+                        <about>
+                            <label>Determine unitcell (free)</label>
+                            <description>Select your own lattice vectors</description>
+                        </about>
+                        <value>0</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>cubic P (sc)</label>
+                        </about>
+                        <value>1</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>cubic F (fcc)</label>
+                        </about>
+                        <value>2</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>cubic I (bcc)</label>
+                        </about>
+                        <value>3</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>Hexagonal and Trigonal P</label>
+                        </about>
+                        <value>4</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>Orthorhombic P</label>
+                        </about>
+                        <value>8</value>
+                    </option>
+                    <default>Determine unitcell (free)</default>
+                    <current>2</current>
+                </choice>
+                <string id="title">
+                    <about>
+                        <label>Title of Run</label>
+                        <description>The title here will be placed in the input file to the Quantum Espresso code</description>
+                    </about>
+                    <default>Enter Title Here</default>
+                    <current>Silicon band structure</current>
+                </string>
+                <string id="indeck">
+                    <about>
+                        <label>Atomic Structure </label>
+                        <description>The first line is number of atoms, the second a comment,  and then n lines with the element symbol and the position vector (in Angstroms for cartensian coordinates).  Atom positions sperated by a space or a tab.</description>
+                    </about>
+                    <default>
+2
+Silicon diamond structure
+Si 0.0 0.0 0.0
+Si 0.25 0.25 0.25</default>
+                    <size>50x6</size>
+                    <current>2
+Silicon diamond structure
+Si 0.0 0.0 0.0
+Si 0.25 0.25 0.25</current>
+                </string>
+                <string id="lattice_vectors">
+                    <about>
+                        <label>Cell Vectors (A)</label>
+                        <enable>input.group(InputModel).group(model).choice(structure) == "0"</enable>
+                        <description>Enter 3 by 3 matrix for the lattice parameters in units of Angstroms. Seperated by a space of a tab.</description>
+                    </about>
+                    <size>50x3</size>
+                    <default>
+-2.715 2.715 0.000
+-2.715 0.000 2.715
+0.000 2.715 2.715</default>
+                    <current>-2.715 2.715 0.000
+-2.715 0.000 2.715
+0.000 2.715 2.715</current>
+                </string>
+                <number id="lat_param_a">
+                    <about>
+                        <label>Lattice Parameter "a" (A)</label>
+                        <enable>input.group(InputModel).group(model).choice(structure) != "0"</enable>
+                        <description>Enter the lattice parameter a in units of Angstroms</description>
+                    </about>
+                    <default>5.43</default>
+                    <min>0.1</min>
+                    <max>1000</max>
+                    <current>5.43</current>
+                </number>
+                <number id="lat_param_b_a">
+                    <about>
+                        <label>Ratio Lattice Parameters "b/a"</label>
+                        <enable>input.group(InputModel).group(model).choice(structure) != "0"</enable>
+                        <description>Enter the ratio between lattice parameters b and a in units of Angstroms</description>
+                    </about>
+                    <default>1</default>
+                    <min>0.1</min>
+                    <max>1000</max>
+                    <current>1</current>
+                </number>
+                <number id="lat_param_c_a">
+                    <about>
+                        <label>Ratio Lattice Parameters "c/a"</label>
+                        <enable>input.group(InputModel).group(model).choice(structure) == "4" || input.group(InputModel).group(model).choice(structure) == "8"</enable>
+                        <description>Enter the ratio between lattice parameters c and a in units of Angstroms</description>
+                    </about>
+                    <default>1</default>
+                    <min>0.1</min>
+                    <max>1000</max>
+                    <current>1</current>
+                </number>
+            </group>
+        </group>
+        <!--
+   ENERGY EXPRESSION PANEL
+   -->
+        <group id="EnEx">
+            <about>
+                <label>Energy Expression</label>
+                <description>
+             Determines the method to describe the total energy of the system and 
+			 derived quantities like force and stress. 
+        </description>
+            </about>
+            <choice id="approx">
+                <about>
+                    <label>Exchange and Correlation functional</label>
+                    <description>
+             Determines the exchange-correlation functional approximation
+          </description>
+                </about>
+                <option>
+                    <about>
+                        <label>LDA</label>
+                    </about>
+                </option>
+                <option>
+                    <about>
+                        <label>GGA</label>
+                    </about>
+                </option>
+                <!--<option><about><label>LDA-SP</label></about></option>
+        <option><about><label>GGA-SP</label></about></option> 
+        <option><about><label>PBE</label></about></option>
+        <option><about><label>PBE-SP</label></about></option>
+        <option><about><label>PW91</label></about></option>
+        <option><about><label>BLYP</label></about></option>
+        <option><about><label>AM05</label></about></option>-->
+                <default>LDA</default>
+                <current>LDA</current>
+            </choice>
+            <choice id="relax">
+                <about>
+                    <label>Relax</label>
+                    <description>Determines whether to relax system</description>
+                </about>
+                <option>
+                    <about>
+                        <label>No</label>
+                    </about>
+                    <value>0</value>
+                </option>
+                <option>
+                    <about>
+                        <label>Force Relax</label>
+                    </about>
+                    <value>1</value>
+                </option>
+                <option>
+                    <about>
+                        <label>Cell Relax</label>
+                    </about>
+                    <value>2</value>
+                </option>
+                <default>0</default>
+                <current>0</current>
+            </choice>
+            <group id="relax_options">
+                <about>
+                    <label>Relaxation Options</label>
+                    <enable>input.group(EnEx).choice(relax) != "0"</enable>
+                </about>
+                <choice id="ion_dynam">
+                    <about>
+                        <label>Ionic Dynamics</label>
+                        <description>Select ionic dynamics</description>
+                    </about>
+                    <option>
+                        <about>
+                            <label>BFGS quasi-newton</label>
+                        </about>
+                        <value>bfgs</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>damped (quick-min Verlet)</label>
+                        </about>
+                        <value>damp</value>
+                    </option>
+                    <default>bfgs</default>
+                    <current>bfgs</current>
+                </choice>
+                <choice id="cell_dynam">
+                    <about>
+                        <label>Cell Dynamics</label>
+                        <description>Select cell dynamics</description>
+                        <enable>input.group(EnEx).choice(relax) == "2"</enable>
+                    </about>
+                    <option>
+                        <about>
+                            <label>None</label>
+                        </about>
+                        <value>none</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>Parrinello-Rahman</label>
+                            <description>damped (Beeman) dynamics of the Parrinello-Rahman extended lagrangian</description>
+                        </about>
+                        <value>damp-pr</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>Wentzcovitch</label>
+                            <description>damped (Beeman) dynamics of the new Wentzcovitch extended lagrangian</description>
+                        </about>
+                        <value>damp-w</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>BFGS quasi-newton</label>
+                            <description>ion dynamics must be 'BFGS quasi-newton' too</description>
+                        </about>
+                        <value>bfgs</value>
+                    </option>
+                    <default>bfgs</default>
+                    <current>bfgs</current>
+                </choice>
+            </group>
+            <group id="kgrid">
+                <about>
+                    <label>K-grid spacing (Reciprocal-space)</label>
+                    <description>Provides the number of k points to use periodically.</description>
+                </about>
+                <group id="kgrid_choice">
+                    <about/>
+                    <number id="x_size">
+                        <about>
+                            <label>X direction</label>
+                            <description>Specifies the number of k points in reciprocal-space x direction</description>
+                        </about>
+                        <default>4</default>
+                        <current>8</current>
+                    </number>
+                    <number id="y_size">
+                        <about>
+                            <label>Y direction</label>
+                            <description>Specifies the number of k points in reciprocal-space y direction</description>
+                        </about>
+                        <default>4</default>
+                        <current>8</current>
+                    </number>
+                    <number id="z_size">
+                        <about>
+                            <label>Z direction</label>
+                            <description>Specifies the number of k points in reciprocal-space z direction</description>
+                        </about>
+                        <default>4</default>
+                        <current>8</current>
+                    </number>
+                </group>
+            </group>
+            <number id="nbnd">
+                <about>
+                    <label>Number of bands</label>
+                    <description>Number of Bands</description>
+                </about>
+                <default>8</default>
+                <current>8</current>
+            </number>
+            <number id="ke_cutoff">
+                <about>
+                    <label>Wavefunction Kinetic Energy cutoff (Ry)</label>
+                    <description>kinetic energy cutoff (Ry) for wavefunctions</description>
+                </about>
+                <default>16.0</default>
+                <current>16.0</current>
+            </number>
+            <number id="ke_cutoff_potential">
+                <about>
+                    <label>Charge Density Kinetic Energy cutoff (Ry)</label>
+                    <description>kinetic energy cutoff (Ry) for charge density and potential</description>
+                </about>
+                <default>96.0</default>
+                <current>96.0</current>
+            </number>
+            <number id="convergence">
+                <about>
+                    <label>SCF Convergence Criterion (Ry)</label>
+                    <description>Self consistent field convergence criterion</description>
+                </about>
+                <!--<units>Ry</units>-->
+                <default>1E-6</default>
+                <current>1E-6</current>
+            </number>
+            <integer id="scf_maxstep">
+                <about>
+                    <label>SCF maximum steps</label>
+                    <description>Maximum number of Self consistent field steps</description>
+                </about>
+                <default>100</default>
+                <current>100</current>
+            </integer>
+            <!-- Spin NOT implemented yet
+      <number id="spin">
+        <about>
+          <label>Spin Polarization</label>
+          <description>Total number of excess electrons of majority spin</description>
+        </about>
+        <default>0</default>
+      </number>
+
+      -->
+            <boolean id="occupation_enable">
+                <about>
+                    <label>Enable occupation options</label>
+                    <description>Enable occupation options</description>
+                </about>
+                <default>no</default>
+                <current>yes</current>
+            </boolean>
+            <group id="occupation_options">
+                <about>
+                    <label>Occupations Options</label>
+                    <enable>input.group(EnEx).boolean(occupation_enable)</enable>
+                </about>
+                <choice id="occupations">
+                    <about>
+                        <label>Occupation</label>
+                        <description>Select smearing for gaussian smearing for metal, tetrahedra for metals and DOS calculations or fixed for insulators with a gap</description>
+                    </about>
+                    <option>
+                        <about>
+                            <label>smearing</label>
+                        </about>
+                    </option>
+                    <option>
+                        <about>
+                            <label>tetrahedra</label>
+                        </about>
+                    </option>
+                    <option>
+                        <about>
+                            <label>fixed</label>
+                        </about>
+                    </option>
+                    <default>smearing</default>
+                    <current>tetrahedra</current>
+                </choice>
+                <!-- Need to add option for smearing -->
+                <choice id="smearing">
+                    <about>
+                        <label>Smearing</label>
+                        <description>Select a smearing option</description>
+                        <enable>input.group(EnEx).group(occupation_options).choice(occupations) == "smearing"</enable>
+                    </about>
+                    <option>
+                        <about>
+                            <label>Gaussian</label>
+                        </about>
+                        <value>0</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>Methfessel-Paxton</label>
+                        </about>
+                        <value>1</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>Marzari-Vanderbilt</label>
+                        </about>
+                        <value>2</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>Fermi-Dirac</label>
+                        </about>
+                        <value>3</value>
+                    </option>
+                    <default>Gaussian</default>
+                    <current>0</current>
+                </choice>
+                <number id="degauss">
+                    <about>
+                        <label>Gaussian Spreading (Ry)</label>
+                        <description>Value of the Gaussian spreading</description>
+                        <enable>input.group(EnEx).group(occupation_options).choice(occupations) == "smearing"</enable>
+                    </about>
+                    <default>0</default>
+                    <current>0</current>
+                </number>
+            </group>
+            <boolean id="mixing_enable">
+                <about>
+                    <label>Enable mixing options</label>
+                    <description>Enable mixing options</description>
+                </about>
+                <default>no</default>
+                <current>no</current>
+            </boolean>
+            <group id="mixing_options">
+                <about>
+                    <label>Mixing Options</label>
+                    <enable>input.group(EnEx).boolean(mixing_enable)</enable>
+                </about>
+                <choice id="mixing_mode">
+                    <about>
+                        <label>Mixing Mode</label>
+                    </about>
+                    <option>
+                        <about>
+                            <label>plain</label>
+                            <description>charge density Broyden mixing</description>
+                        </about>
+                    </option>
+                    <option>
+                        <about>
+                            <label>TF</label>
+                            <description>simple Thomas-Fermi screening</description>
+                        </about>
+                    </option>
+                    <option>
+                        <about>
+                            <label>local-TF</label>
+                            <description>local-density-dependent Thomas Fermi screening</description>
+                        </about>
+                    </option>
+                    <default>plain</default>
+                    <current>plain</current>
+                </choice>
+                <number id="mixing_beta">
+                    <about>
+                        <label>Mixing factor</label>
+                        <description>mixing factor for self-consistency</description>
+                    </about>
+                    <default>0.7</default>
+                    <current>0.7</current>
+                </number>
+            </group>
+        </group>
+        <group id="phonon">
+            <about>
+                <label>Phonons</label>
+                <description>Determines options for phonon calculations.</description>
+            </about>
+            <boolean id="phonon">
+                <about>
+                    <label>Phonon Calculations</label>
+                    <description>Do you want to do phonon calculations?</description>
+                </about>
+                <default>no</default>
+                <current>no</current>
+            </boolean>
+            <group id="phonon_options">
+                <about>
+                    <label>Phonon Calculations Options</label>
+                    <enable>input.group(phonon).boolean(phonon)</enable>
+                </about>
+                <choice id="phonon_calc">
+                    <about>
+                        <label>Calculation</label>
+                    </about>
+                    <option>
+                        <about>
+                            <label>Single q-point</label>
+                        </about>
+                        <value>0</value>
+                    </option>
+                    <option>
+                        <about>
+                            <label>Dispersion relationship</label>
+                        </about>
+                        <value>1</value>
+                    </option>
+                    <default>Dispersion relationship</default>
+                    <current>1</current>
+                </choice>
+                <string id="atomic_mass">
+                    <about>
+                        <label>Atomic Mass</label>
+                        <description>Enter element symbol and the element's atomic mass seperated by a space or tab. Enter each element on a different line</description>
+                    </about>
+                    <size>50x3</size>
+                    <default>Si 28.086</default>
+                    <current>Si 28.086</current>
+                </string>
+                <number id="phonon_convergence">
+                    <about>
+                        <label>Phonon Convergence Criterion (Ry)</label>
+                        <description>Phonon energy convergence criterion</description>
+                    </about>
+                    <!--<units>Ry</units>-->
+                    <default>1E-12</default>
+                    <current>1E-12</current>
+                </number>
+                <boolean id="eps">
+                    <about>
+                        <label>Dielectric Constant</label>
+                        <description>Calculate Macroscopic Dielectric Constant?</description>
+                    </about>
+                    <default>no</default>
+                    <current>no</current>
+                </boolean>
+                <group id="qpoint">
+                    <about>
+                        <label>Q-point</label>
+                        <enable>input.group(phonon).group(phonon_options).choice(phonon_calc) == "0"</enable>
+                    </about>
+                    <string id="q_point">
+                        <about>
+                            <label>q-point</label>
+                            <description>Point at which to do phonon calculations</description>
+                        </about>
+                        <default>0 0 0</default>
+                        <current>0 0 0</current>
+                    </string>
+                </group>
+                <group id="qgrid">
+                    <about>
+                        <label>Q-grid spacing (Reciprocal-space)</label>
+                        <enable>input.group(phonon).group(phonon_options).choice(phonon_calc) == "1"</enable>
+                        <description>Provides the number of q points to use periodically.</description>
+                    </about>
+                    <group id="qgrid_choice">
+                        <about/>
+                        <number id="x_size">
+                            <about>
+                                <label>X direction</label>
+                                <description>Specifies the number of q points in reciprocal-space x direction</description>
+                            </about>
+                            <default>2</default>
+                            <current>2</current>
+                        </number>
+                        <number id="y_size">
+                            <about>
+                                <label>Y direction</label>
+                                <description>Specifies the number of q points in reciprocal-space y direction</description>
+                            </about>
+                            <default>2</default>
+                            <current>2</current>
+                        </number>
+                        <number id="z_size">
+                            <about>
+                                <label>Z direction</label>
+                                <description>Specifies the number of q points in reciprocal-space z direction</description>
+                            </about>
+                            <default>2</default>
+                            <current>2</current>
+                        </number>
+                        <string id="q_path">
+                            <about>
+                                <label>Dispersion Curve path</label>
+                                <description>List of high symmetry points describing path</description>
+                            </about>
+                            <default>
+0.0 0.0 0.0
+0.5 0.0 0.0
+0.5 0.5 0.0
+0.5 0.5 0.5
+0.0 0.0 0.0   </default>
+                            <current>0.0 0.0 0.0
+0.5 0.0 0.0
+0.5 0.5 0.0
+0.5 0.5 0.5
+0.0 0.0 0.0</current>
+                        </string>
+                        <number id="q_num">
+                            <about>
+                                <label>Number of Points</label>
+                                <description>Number of Points to display on Dispersion relationship plot</description>
+                            </about>
+                            <default>21</default>
+                            <current>21</current>
+                        </number>
+                    </group>
+                </group>
+            </group>
+        </group>
+        <group id="bandstructure">
+            <about>
+                <label>Band Structure/DOS</label>
+            </about>
+            <boolean id="bandstructure">
+                <about>
+                    <label>Band Structure Calculations</label>
+                    <description>Do you want to do band structure calculations?</description>
+                </about>
+                <default>no</default>
+                <current>yes</current>
+            </boolean>
+            <group id="bandstructure">
+                <about>
+                    <label>Band Structure</label>
+                    <description>Provide parameters describing band structure</description>
+                    <enable>input.group(bandstructure).boolean(bandstructure)</enable>
+                </about>
+                <string id="k_path">
+                    <about>
+                        <label>Path</label>
+                        <description>List of high symmetry points describing path</description>
+                    </about>
+                    <default>
+0.5 0.5 0.5
+0.0 0.0 0.0
+1.0 0.0 0.0</default>
+                    <current>0.5 0.5 0.5
+0.0 0.0 0.0
+1.0 0.0 0.0</current>
+                </string>
+                <number id="k_num">
+                    <about>
+                        <label>Number of Points</label>
+                        <description>Number of Points to display on Band Structure plot</description>
+                    </about>
+                    <default>11</default>
+                    <current>11</current>
+                </number>
+            </group>
+            <boolean id="dos">
+                <about>
+                    <label>Density of States Calculations</label>
+                    <description>Do you want to do DoS calculations?</description>
+                </about>
+                <default>yes</default>
+                <current>yes</current>
+            </boolean>
+            <group id="dos">
+                <about>
+                    <label>Density of States</label>
+                    <enable>input.group(bandstructure).boolean(dos)</enable>
+                </about>
+                <number id="dos_min_E">
+                    <about>
+                        <label>minimum Energy (eV)</label>
+                        <description>minimum energy for DOS plot</description>
+                    </about>
+                    <default>-20</default>
+                    <current>-6</current>
+                </number>
+                <number id="dos_max_E">
+                    <about>
+                        <label>maximum Energy (eV)</label>
+                        <description>maximum energy for DOS plot</description>
+                    </about>
+                    <default>20</default>
+                    <current>10</current>
+                </number>
+                <number id="dos_delta_E">
+                    <about>
+                        <label>energy grid step (eV)</label>
+                        <description>energy increments on DOS plot</description>
+                    </about>
+                    <default>0.05</default>
+                    <current>0.1</current>
+                </number>
+            </group>
+        </group>
+        <group id="advanced_options">
+            <about>
+                <label>Advanced Options</label>
+            </about>
+            <choice id="venue">
+                <about>
+                    <label>Simulation venue</label>
+                    <description>Run in serial on local nanoHUB resources or in parallel on Purdue resources</description>
+                </about>
+                <option>
+                    <about>
+                        <label>Serial</label>
+                    </about>
+                    <value>serial</value>
+                </option>
+                <option>
+                    <about>
+                        <label>Parallel</label>
+                    </about>
+                    <value>rcac-ncn</value>
+                </option>
+                <default>serial</default>
+                <current>serial</current>
+            </choice>
+            <integer id="num_nodes">
+                <about>
+                    <enable>input.group(advanced_options).choice(venue) != "serial"</enable>
+                    <label>Number of nodes</label>
+                    <description>Set the number of nodes used in the parallel simulation</description>
+                </about>
+                <min>1</min>
+                <max>96</max>
+                <default>4</default>
+                <current>4</current>
+            </integer>
+            <string id="walltime">
+                <about>
+                    <enable>input.group(advanced_options).choice(venue) != "serial"</enable>
+                    <label>Walltime</label>
+                    <description>Enter the requested simulation time in hh:mm:ss</description>
+                </about>
+                <default>1:00:00</default>
+                <hints>Format is hh:mm:ss</hints>
+                <current>1:00:00</current>
+            </string>
+        </group>
+    </input>
+    <output>
+        <curve id="dos">
+            <about>
+                <label>Density of States</label>
+                <description>Electron Density of States</description>
+                <group>Density Of States</group>
+            </about>
+            <xaxis>
+                <label>Energy (eV)</label>
+            </xaxis>
+            <yaxis>
+                <label>Density of States</label>
+            </yaxis>
+            <component>
+                <xy>-5.865 0.0000E+00
+-5.765 0.1802E-01
+-5.665 0.7209E-01
+-5.565 0.1380E+00
+-5.465 0.1725E+00
+-5.365 0.2102E+00
+-5.265 0.2610E+00
+-5.165 0.2971E+00
+-5.065 0.2878E+00
+-4.965 0.3119E+00
+-4.865 0.3391E+00
+-4.765 0.3692E+00
+-4.665 0.4007E+00
+-4.565 0.4303E+00
+-4.465 0.4493E+00
+-4.365 0.4713E+00
+-4.265 0.4902E+00
+-4.165 0.5151E+00
+-4.065 0.5519E+00
+-3.965 0.5954E+00
+-3.865 0.6432E+00
+-3.765 0.6957E+00
+-3.665 0.8047E+00
+-3.565 0.9283E+00
+-3.465 0.9249E+00
+-3.365 0.8570E+00
+-3.265 0.8377E+00
+-3.165 0.8204E+00
+-3.065 0.8055E+00
+-2.965 0.7861E+00
+-2.865 0.7586E+00
+-2.765 0.7459E+00
+-2.665 0.7244E+00
+-2.565 0.6916E+00
+-2.465 0.6349E+00
+-2.365 0.5485E+00
+-2.265 0.4396E+00
+-2.165 0.3392E+00
+-2.065 0.2480E+00
+-1.965 0.1694E+00
+-1.865 0.1040E+00
+-1.765 0.5187E-01
+-1.665 0.1547E-01
+-1.565 0.1920E-01
+-1.465 0.5555E-01
+-1.365 0.1086E+00
+-1.265 0.1777E+00
+-1.165 0.2629E+00
+-1.065 0.3668E+00
+-0.965 0.4995E+00
+-0.865 0.6708E+00
+-0.765 0.9347E+00
+-0.665 0.1247E+01
+-0.565 0.1348E+01
+-0.465 0.1260E+01
+-0.365 0.1058E+01
+-0.265 0.9072E+00
+-0.165 0.8019E+00
+-0.065 0.7101E+00
+0.035 0.6320E+00
+0.135 0.5675E+00
+0.235 0.5215E+00
+0.335 0.4899E+00
+0.435 0.4583E+00
+0.535 0.4271E+00
+0.635 0.3966E+00
+0.735 0.3694E+00
+0.835 0.3462E+00
+0.935 0.3253E+00
+1.035 0.3064E+00
+1.135 0.2896E+00
+1.235 0.2753E+00
+1.335 0.2618E+00
+1.435 0.2486E+00
+1.535 0.2394E+00
+1.635 0.2292E+00
+1.735 0.2182E+00
+1.835 0.4621E+00
+1.935 0.9426E+00
+2.035 0.1152E+01
+2.135 0.1130E+01
+2.235 0.1133E+01
+2.335 0.1142E+01
+2.435 0.1148E+01
+2.535 0.1159E+01
+2.635 0.1358E+01
+2.735 0.1022E+01
+2.835 0.1049E+01
+2.935 0.1103E+01
+3.035 0.1185E+01
+3.135 0.1311E+01
+3.235 0.1518E+01
+3.335 0.1838E+01
+3.435 0.1559E+01
+3.535 0.1494E+01
+3.635 0.1543E+01
+3.735 0.1524E+01
+3.835 0.1417E+01
+3.935 0.1422E+01
+4.035 0.1439E+01
+4.135 0.1394E+01
+4.235 0.1357E+01
+4.335 0.1322E+01
+4.435 0.1283E+01
+4.535 0.1356E+01
+4.635 0.1286E+01
+4.735 0.1130E+01
+4.835 0.9432E+00
+4.935 0.7447E+00
+5.035 0.6302E+00
+5.135 0.5349E+00
+5.235 0.4514E+00
+5.335 0.3519E+00
+5.435 0.2995E+00
+5.535 0.2450E+00
+5.635 0.1885E+00
+5.735 0.1299E+00
+5.835 0.6608E-01
+5.935 0.2225E-01
+6.035 0.1702E-02
+6.135 0.0000E+00
+6.235 0.0000E+00
+6.335 0.0000E+00
+6.435 0.0000E+00
+6.535 0.0000E+00
+6.635 0.0000E+00
+6.735 0.1818E-01
+6.835 0.7614E-01
+6.935 0.1627E+00
+7.035 0.1902E+00
+7.135 0.2245E+00
+7.235 0.2700E+00
+7.335 0.3379E+00
+7.435 0.4074E+00
+7.535 0.4678E+00
+7.635 0.5439E+00
+7.735 0.6645E+00
+7.835 0.8284E+00
+7.935 0.1032E+01
+8.035 0.1212E+01
+8.135 0.1621E+01
+8.235 0.1915E+01
+8.335 0.2179E+01
+8.435 0.2157E+01
+8.535 0.2054E+01
+8.635 0.1846E+01
+8.735 0.1540E+01
+8.835 0.1218E+01
+8.935 0.7825E+00
+9.035 0.5917E+00
+9.135 0.6140E+00
+9.235 0.7796E+00
+9.335 0.9989E+00
+9.435 0.1274E+01
+9.535 0.1746E+01
+9.635 0.3088E+01
+9.735 0.2598E+01
+9.835 0.1805E+01
+9.935 0.1450E+01
+</xy>
+            </component>
+        </curve>
+        <curve id="dos_fermi">
+            <about>
+                <label>Fermi level</label>
+                <description>Fermi level</description>
+                <group>Density Of States</group>
+                <style>-color red -linestyle dashed</style>
+            </about>
+            <xaxis>
+                <label>Energy (eV)</label>
+            </xaxis>
+            <yaxis>
+                <label>Density of States</label>
+            </yaxis>
+            <component>
+                <xy>6.4805 0
+6.4805 0.3088E+01
+</xy>
+            </component>
+        </curve>
+        <curve id="bs 0">
+            <about>
+                <label>Band 1</label>
+                <description>Electron Band Structure</description>
+                <group>Electron Band Structure</group>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>    0.8660   -3.5090    1.0392   -3.9690    1.2124   -4.7300    1.3856   -5.3450    1.5588   -5.7380    1.7321   -5.8660    1.9321   -5.6950    2.1321   -5.1710    2.3321   -4.3130    2.5321   -3.1490    2.7321   -1.7190</xy>
+            </component>
+        </curve>
+        <curve id="bs 1">
+            <about>
+                <label>Band 2</label>
+                <description>Electron Band Structure</description>
+                <group>Electron Band Structure</group>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>    2.7321   -1.7190    2.5321   -0.0740    2.3321    1.6820    2.1321    3.4630    1.9321    5.1390    1.7321    6.0720    1.5588    4.9250    1.3856    3.0610    1.2124    1.2730    1.0392   -0.2070    0.8660   -0.9100</xy>
+            </component>
+        </curve>
+        <curve id="bs 2">
+            <about>
+                <label>Band 3</label>
+                <description>Electron Band Structure</description>
+                <group>Electron Band Structure</group>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>    0.8660    4.8640    1.0392    4.9340    1.2124    5.1470    1.3856    5.4860    1.5588    5.8700    1.7321    6.0720    1.9321    5.4880    2.1321    4.5690    2.3321    3.8230    2.5321    3.3560    2.7321    3.1950</xy>
+            </component>
+        </curve>
+        <curve id="bs 3">
+            <about>
+                <label>Band 4</label>
+                <description>Electron Band Structure</description>
+                <group>Electron Band Structure</group>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>    2.7321    3.1950    2.5321    3.3560    2.3321    3.8230    2.1321    4.5690    1.9321    5.4880    1.7321    6.0720    1.5588    5.8700    1.3856    5.4860    1.2124    5.1470    1.0392    4.9340    0.8660    4.8640</xy>
+            </component>
+        </curve>
+        <curve id="bs 4">
+            <about>
+                <label>Band 5</label>
+                <description>Electron Band Structure</description>
+                <group>Electron Band Structure</group>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>    0.8660    7.6010    1.0392    7.6700    1.2124    7.8950    1.3856    8.2560    1.5588    8.6210    1.7321    8.6360    1.9321    8.2410    2.1321    7.5010    2.3321    6.8970    2.5321    6.6120    2.7321    6.7440</xy>
+            </component>
+        </curve>
+        <curve id="bs 5">
+            <about>
+                <label>Band 6</label>
+                <description>Electron Band Structure</description>
+                <group>Electron Band Structure</group>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>    2.7321   16.0810    2.5321   14.5780    2.3321   12.7200    2.1321   10.9660    1.9321    9.4280    1.7321    8.6360    1.5588    8.9290    1.3856    9.4390    1.2124    9.6160    1.0392    9.5070    0.8660    9.4370</xy>
+            </component>
+        </curve>
+        <curve id="bs 6">
+            <about>
+                <label>Band 7</label>
+                <description>Electron Band Structure</description>
+                <group>Electron Band Structure</group>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>    0.8660   13.6320    1.0392   13.7480    1.2124   13.5520    1.3856   12.0010    1.5588   10.2720    1.7321    9.3520    1.9321   10.1620    2.1321   10.9660    2.3321   12.7200    2.5321   14.5780    2.7321   16.0810</xy>
+            </component>
+        </curve>
+        <curve id="bs 7">
+            <about>
+                <label>Band 8</label>
+                <description>Electron Band Structure</description>
+                <group>Electron Band Structure</group>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>    2.7321    6.7440    2.5321    7.3530    2.3321    8.4590    2.1321    9.9270    1.9321    9.4280    1.7321    8.6360    1.5588    8.9290    1.3856    9.4390    1.2124    9.6160    1.0392    9.5070    0.8660    9.4370</xy>
+            </component>
+        </curve>
+        <curve id="bs_symmetry_0">
+            <about>
+                <label>High Symmetry Point 0.5 0.5 0.5</label>
+                <description>High Symmetry Point 0.5 0.5 0.5</description>
+                <group>Electron Band Structure</group>
+                <style>-color red -linestyle dashed</style>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>0.8660 -5.8660
+0.8660 16.0810
+</xy>
+            </component>
+        </curve>
+        <curve id="bs_symmetry_1">
+            <about>
+                <label>High Symmetry Point 0.0 0.0 0.0</label>
+                <description>High Symmetry Point 0.0 0.0 0.0</description>
+                <group>Electron Band Structure</group>
+                <style>-color red -linestyle dashed</style>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>1.7321 -5.8660
+1.7321 16.0810
+</xy>
+            </component>
+        </curve>
+        <curve id="bs_symmetry_2">
+            <about>
+                <label>High Symmetry Point 1.0 0.0 0.0</label>
+                <description>High Symmetry Point 1.0 0.0 0.0</description>
+                <group>Electron Band Structure</group>
+                <style>-color red -linestyle dashed</style>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>2.7321 -5.8660
+2.7321 16.0810
+</xy>
+            </component>
+        </curve>
+        <curve id="fermi">
+            <about>
+                <label>Fermi level: 6.4805</label>
+                <description>Fermi level: 6.4805</description>
+                <group>Electron Band Structure</group>
+                <style>-color red -linestyle dashed</style>
+            </about>
+            <xaxis>
+                <label>K-Point</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy (eV)</label>
+            </yaxis>
+            <component>
+                <xy>0.8660 6.4805
+2.7321 6.4805
+</xy>
+            </component>
+        </curve>
+        <string id="scf_output">
+            <about>
+                <label>SCF Output Log</label>
+                <description>Output generated by Self-consisting field calculation</description>
+            </about>
+            <current>
+     Program PWSCF     v.4.1.1  starts ...
+     Today is 22Feb2026 at 14:50:30 
+
+     Parallel version (MPI)
+
+     Number of processors in use:       1
+
+     For Norm-Conserving or Ultrasoft (Vanderbilt) Pseudopotentials or PAW
+
+     Current dimensions of program pwscf are:
+     Max number of different atomic species (ntypx) = 10
+     Max number of k-points (npk) =  40000
+     Max angular momentum in pseudopotentials (lmaxx) =  3
+     Waiting for input...
+
+     Subspace diagonalization in iterative solution of the eigenvalue problem:
+     Too few procs for parallel algorithm
+       we need at least 4 procs per pool
+     a serial algorithm will be used
+
+
+     Planes per process (thick) : nr3 = 24 npp =  24 ncplane =  576
+     Planes per process (smooth): nr3s= 20 npps=  20 ncplanes=  400
+ 
+     Proc/  planes cols     G    planes cols    G      columns  G
+     Pool       (dense grid)       (smooth grid)      (wavefct grid)
+        1    24    349     4285   20    235     2277     85      531
+ 
+
+     Title: 
+     Silicon band structure                                                     
+
+
+     bravais-lattice index     =            2
+     lattice parameter (a_0)   =      10.2612  a.u.
+     unit-cell volume          =     270.1071 (a.u.)^3
+     number of atoms/cell      =            2
+     number of atomic types    =            1
+     number of electrons       =         8.00
+     number of Kohn-Sham states=            8
+     kinetic-energy cutoff     =      16.0000  Ry
+     charge density cutoff     =      96.0000  Ry
+     convergence threshold     =      1.0E-06
+     mixing beta               =       0.7000
+     number of iterations used =            8  plain     mixing
+     Exchange-correlation      =  SLA  PZ   NOGX NOGC (1100)
+
+     celldm(1)=  10.261212  celldm(2)=   0.000000  celldm(3)=   0.000000
+     celldm(4)=   0.000000  celldm(5)=   0.000000  celldm(6)=   0.000000
+
+     crystal axes: (cart. coord. in units of a_0)
+               a(1) = ( -0.500000  0.000000  0.500000 )  
+               a(2) = (  0.000000  0.500000  0.500000 )  
+               a(3) = ( -0.500000  0.500000  0.000000 )  
+
+     reciprocal axes: (cart. coord. in units 2 pi/a_0)
+               b(1) = ( -1.000000 -1.000000  1.000000 )  
+               b(2) = (  1.000000  1.000000  1.000000 )  
+               b(3) = ( -1.000000  1.000000 -1.000000 )  
+
+
+     PseudoPot. # 1 for Si read from file Si.UPF
+     Pseudo is Norm-conserving, Zval =  4.0
+     Generated by new atomic code, or converted to UPF format
+     Using radial grid of  431 points,  2 beta functions with: 
+                l(1) =   0
+                l(2) =   1
+
+     atomic species   valence    mass     pseudopotential
+        Si             4.00    28.08600     Si( 1.00)
+
+     48 Sym.Ops. (with inversion)
+
+
+   Cartesian axes
+
+     site n.     atom                  positions (a_0 units)
+         1           Si  tau(  1) = (   0.0000000   0.0000000   0.0000000  )
+         2           Si  tau(  2) = (  -0.2500000   0.2500000   0.2500000  )
+
+     number of k points=   29 (tetrahedron method)
+                       cart. coord. in units 2pi/a_0
+        k(    1) = (   0.0000000   0.0000000   0.0000000), wk =   0.0039062
+        k(    2) = (  -0.1250000   0.1250000  -0.1250000), wk =   0.0312500
+        k(    3) = (  -0.2500000   0.2500000  -0.2500000), wk =   0.0312500
+        k(    4) = (  -0.3750000   0.3750000  -0.3750000), wk =   0.0312500
+        k(    5) = (   0.5000000  -0.5000000   0.5000000), wk =   0.0156250
+        k(    6) = (   0.0000000   0.2500000   0.0000000), wk =   0.0234375
+        k(    7) = (  -0.1250000   0.3750000  -0.1250000), wk =   0.0937500
+        k(    8) = (  -0.2500000   0.5000000  -0.2500000), wk =   0.0937500
+        k(    9) = (   0.6250000  -0.3750000   0.6250000), wk =   0.0937500
+        k(   10) = (   0.5000000  -0.2500000   0.5000000), wk =   0.0937500
+        k(   11) = (   0.3750000  -0.1250000   0.3750000), wk =   0.0937500
+        k(   12) = (   0.2500000   0.0000000   0.2500000), wk =   0.0468750
+        k(   13) = (   0.0000000   0.5000000   0.0000000), wk =   0.0234375
+        k(   14) = (  -0.1250000   0.6250000  -0.1250000), wk =   0.0937500
+        k(   15) = (   0.7500000  -0.2500000   0.7500000), wk =   0.0937500
+        k(   16) = (   0.6250000  -0.1250000   0.6250000), wk =   0.0937500
+        k(   17) = (   0.5000000   0.0000000   0.5000000), wk =   0.0468750
+        k(   18) = (   0.0000000   0.7500000   0.0000000), wk =   0.0234375
+        k(   19) = (   0.8750000  -0.1250000   0.8750000), wk =   0.0937500
+        k(   20) = (   0.7500000   0.0000000   0.7500000), wk =   0.0468750
+        k(   21) = (   0.0000000  -1.0000000   0.0000000), wk =   0.0117188
+        k(   22) = (  -0.2500000   0.5000000   0.0000000), wk =   0.0937500
+        k(   23) = (   0.6250000  -0.3750000   0.8750000), wk =   0.1875000
+        k(   24) = (   0.5000000  -0.2500000   0.7500000), wk =   0.0937500
+        k(   25) = (   0.7500000  -0.2500000   1.0000000), wk =   0.0937500
+        k(   26) = (   0.6250000  -0.1250000   0.8750000), wk =   0.1875000
+        k(   27) = (   0.5000000   0.0000000   0.7500000), wk =   0.0937500
+        k(   28) = (  -0.2500000  -1.0000000   0.0000000), wk =   0.0468750
+        k(   29) = (  -0.5000000  -1.0000000   0.0000000), wk =   0.0234375
+
+     G cutoff =  256.0406  (   4285 G-vectors)     FFT grid: ( 24, 24, 24)
+     G cutoff =  170.6937  (   2277 G-vectors)  smooth grid: ( 20, 20, 20)
+
+     Largest allocated arrays     est. size (Mb)     dimensions
+        Kohn-Sham Wavefunctions         0.04 Mb     (    303,   8)
+        NL pseudopotentials             0.04 Mb     (    303,   8)
+        Each V/rho on FFT grid          0.21 Mb     (  13824)
+        Each G-vector array             0.03 Mb     (   4285)
+        G-vector shells                 0.00 Mb     (     87)
+     Largest temporary arrays     est. size (Mb)     dimensions
+        Auxiliary wavefunctions         0.15 Mb     (    303,  32)
+        Each subspace H/S matrix        0.02 Mb     (     32,  32)
+        Each &lt;psi_i|beta_j&gt; matrix      0.00 Mb     (      8,   8)
+        Arrays for rho mixing           1.69 Mb     (  13824,   8)
+
+     Initial potential from superposition of free atoms
+
+     starting charge    7.99901, renormalised to    8.00000
+     Starting wfc are    8 atomic wfcs
+
+     total cpu time spent up to now is      0.05 secs
+
+     per-process dynamical memory:     7.1 Mb
+
+     Self-consistent Calculation
+
+     iteration #  1     ecut=    16.00 Ry     beta=0.70
+     Davidson diagonalization with overlap
+     ethr =  1.00E-02,  avg # of iterations =  3.6
+
+     Threshold (ethr) on eigenvalues was too large:
+     Diagonalizing with lowered threshold
+
+     Davidson diagonalization with overlap
+     ethr =  7.59E-04,  avg # of iterations =  1.0
+
+     total cpu time spent up to now is      0.23 secs
+
+     total energy              =     -15.83534820 Ry
+     Harris-Foulkes estimate   =     -15.85565594 Ry
+     estimated scf accuracy    &lt;       0.06010488 Ry
+
+     iteration #  2     ecut=    16.00 Ry     beta=0.70
+     Davidson diagonalization with overlap
+     ethr =  7.51E-04,  avg # of iterations =  1.0
+
+     total cpu time spent up to now is      0.29 secs
+
+     total energy              =     -15.83883689 Ry
+     Harris-Foulkes estimate   =     -15.83906976 Ry
+     estimated scf accuracy    &lt;       0.00183237 Ry
+
+     iteration #  3     ecut=    16.00 Ry     beta=0.70
+     Davidson diagonalization with overlap
+     ethr =  2.29E-05,  avg # of iterations =  2.3
+
+     total cpu time spent up to now is      0.37 secs
+
+     total energy              =     -15.83892741 Ry
+     Harris-Foulkes estimate   =     -15.83893265 Ry
+     estimated scf accuracy    &lt;       0.00005070 Ry
+
+     iteration #  4     ecut=    16.00 Ry     beta=0.70
+     Davidson diagonalization with overlap
+     ethr =  6.34E-07,  avg # of iterations =  2.1
+
+     total cpu time spent up to now is      0.45 secs
+
+     End of self-consistent calculation
+
+          k = 0.0000 0.0000 0.0000 (   283 PWs)   bands (ev):
+
+    -5.8648   6.0734   6.0734   6.0734   8.6368   8.6368   8.6368   9.3538
+
+          k =-0.1250 0.1250-0.1250 (   301 PWs)   bands (ev):
+
+    -5.6637   4.4703   5.7795   5.7795   8.5449   9.0595   9.0595  10.6884
+
+          k =-0.2500 0.2500-0.2500 (   296 PWs)   bands (ev):
+
+    -5.0624   2.1432   5.3047   5.3047   8.0646   9.5862   9.5862  12.8497
+
+          k =-0.3750 0.3750-0.3750 (   290 PWs)   bands (ev):
+
+    -4.1595   0.1195   4.9752   4.9752   7.7135   9.5388   9.5388  13.7894
+
+          k = 0.5000-0.5000 0.5000 (   272 PWs)   bands (ev):
+
+    -3.5077  -0.9093   4.8654   4.8654   7.6018   9.4374   9.4374  13.6317
+
+          k = 0.0000 0.2500 0.0000 (   295 PWs)   bands (ev):
+
+    -5.5920   4.7487   5.2583   5.2583   8.0644   9.7794   9.7794  10.3760
+
+          k =-0.1250 0.3750-0.1250 (   295 PWs)   bands (ev):
+
+    -5.1209   2.8541   4.7421   4.8214   8.1970   9.7518  10.5490  10.8153
+
+          k =-0.2500 0.5000-0.2500 (   296 PWs)   bands (ev):
+
+    -4.3033   0.7900   4.2269   4.4713   8.2953   9.7002  10.5549  11.5263
+
+          k = 0.6250-0.3750 0.6250 (   289 PWs)   bands (ev):
+
+    -3.4281  -0.6856   3.7789   4.4969   8.2475   9.5755  10.1930  13.4096
+
+          k = 0.5000-0.2500 0.5000 (   290 PWs)   bands (ev):
+
+    -3.6769  -0.3109   3.5947   4.7944   8.4147   9.6830   9.9577  13.8882
+
+          k = 0.3750-0.1250 0.3750 (   294 PWs)   bands (ev):
+
+    -4.6086   1.4516   3.7432   5.2903   8.7675   9.7564   9.9175  12.2978
+
+          k = 0.2500 0.0000 0.2500 (   297 PWs)   bands (ev):
+
+    -5.3219   3.3933   4.4260   5.7760   9.0925   9.1972   9.4077  11.5442
+
+          k = 0.0000 0.5000 0.0000 (   303 PWs)   bands (ev):
+
+    -4.7839   2.5767   4.1648   4.1648   7.1665   9.1772  11.8284  11.8284
+
+          k =-0.1250 0.6250-0.1250 (   298 PWs)   bands (ev):
+
+    -4.0721   1.1574   3.3789   3.8451   7.3902   8.9400  12.0486  12.3574
+
+          k = 0.7500-0.2500 0.7500 (   290 PWs)   bands (ev):
+
+    -3.1347  -0.2945   2.5106   3.8492   7.5621  10.5039  11.7799  12.0181
+
+          k = 0.6250-0.1250 0.6250 (   290 PWs)   bands (ev):
+
+    -2.9271  -0.5572   2.0466   4.1706   7.8906  11.5071  11.5705  13.0089
+
+          k = 0.5000 0.0000 0.5000 (   295 PWs)   bands (ev):
+
+    -3.8136   0.6086   2.2842   4.7318   8.5004  10.8681  11.1784  12.1351
+
+          k = 0.0000 0.7500 0.0000 (   298 PWs)   bands (ev):
+
+    -3.4654   0.3575   3.4458   3.4458   6.6455   7.5789  14.1018  14.1018
+
+          k = 0.8750-0.1250 0.8750 (   293 PWs)   bands (ev):
+
+    -2.5646  -0.7255   2.6048   3.3687   6.9303   8.0120  14.3490  14.3802
+
+          k = 0.7500 0.0000 0.7500 (   288 PWs)   bands (ev):
+
+    -2.1165  -1.1249   1.7261   3.6278   7.2435  10.1818  13.5421  14.0683
+
+          k = 0.0000-1.0000 0.0000 (   302 PWs)   bands (ev):
+
+    -1.7179  -1.7179   3.1965   3.1965   6.7443   6.7443  16.0824  16.0824
+
+          k =-0.2500 0.5000 0.0000 (   296 PWs)   bands (ev):
+
+    -4.5328   1.8022   3.3329   4.6326   8.4975   9.9458  10.2611  11.5686
+
+          k = 0.6250-0.3750 0.8750 (   290 PWs)   bands (ev):
+
+    -3.6377   0.2441   2.7268   4.1251   8.9311   9.6115  11.0750  12.0161
+
+          k = 0.5000-0.2500 0.7500 (   284 PWs)   bands (ev):
+
+    -2.9759  -0.7114   2.6016   3.8931   9.1300   9.1849  11.9953  13.1964
+
+          k = 0.7500-0.2500 1.0000 (   296 PWs)   bands (ev):
+
+    -3.2659   0.1393   2.6783   3.2857   7.9890   8.6939  11.8136  14.0566
+
+          k = 0.6250-0.1250 0.8750 (   289 PWs)   bands (ev):
+
+    -2.3815  -0.8307   1.9730   3.0837   8.4350  10.3339  11.3355  13.4905
+
+          k = 0.5000 0.0000 0.7500 (   286 PWs)   bands (ev):
+
+    -2.7314  -0.4670   1.8037   3.4639   8.9172  10.6029  11.2717  13.0946
+
+          k =-0.2500-1.0000 0.0000 (   290 PWs)   bands (ev):
+
+    -1.6327  -1.6327   2.6233   2.6233   8.0162   8.0162  13.9028  13.9028
+
+          k =-0.5000-1.0000 0.0000 (   280 PWs)   bands (ev):
+
+    -1.5386  -1.5386   2.1810   2.1810  10.3208  10.3208  11.0627  11.0627
+
+     the Fermi energy is     6.4805 ev
+
+!    total energy              =     -15.83893370 Ry
+     Harris-Foulkes estimate   =     -15.83893378 Ry
+     estimated scf accuracy    &lt;       0.00000018 Ry
+
+     The total energy is the sum of the following terms:
+
+     one-electron contribution =       4.66368383 Ry
+     hartree contribution      =       1.09033646 Ry
+     xc contribution           =      -4.79400904 Ry
+     ewald contribution        =     -16.79894495 Ry
+
+     convergence has been achieved in   4 iterations
+
+     Forces acting on atoms (Ry/au):
+
+     atom   1 type  1   force =     0.00000000    0.00000000    0.00000000
+     atom   2 type  1   force =     0.00000000    0.00000000    0.00000000
+
+     Total force =     0.000000     Total SCF correction =     0.000000
+
+
+     entering subroutine stress ...
+
+          total   stress  (Ry/bohr**3)                   (kbar)     P=  -33.20
+  -0.00022568   0.00000000   0.00000000        -33.20      0.00      0.00
+   0.00000000  -0.00022568  -0.00000000          0.00    -33.20     -0.00
+   0.00000000  -0.00000000  -0.00022568          0.00     -0.00    -33.20
+
+
+     Writing output data file qe.save
+ 
+     PWSCF        :     0.95s CPU time,    1.02s wall time
+
+     init_run     :     0.03s CPU
+     electrons    :     0.40s CPU
+     forces       :     0.00s CPU
+     stress       :     0.01s CPU
+
+     Called by init_run:
+     wfcinit      :     0.02s CPU
+     potinit      :     0.00s CPU
+
+     Called by electrons:
+     c_bands      :     0.30s CPU (       5 calls,   0.061 s avg)
+     sum_band     :     0.09s CPU (       5 calls,   0.018 s avg)
+     v_of_rho     :     0.00s CPU (       5 calls,   0.000 s avg)
+     mix_rho      :     0.00s CPU (       5 calls,   0.000 s avg)
+
+     Called by c_bands:
+     init_us_2    :     0.01s CPU (     377 calls,   0.000 s avg)
+     cegterg      :     0.29s CPU (     145 calls,   0.002 s avg)
+
+     Called by *egterg:
+     h_psi        :     0.26s CPU (     465 calls,   0.001 s avg)
+     g_psi        :     0.00s CPU (     291 calls,   0.000 s avg)
+     cdiaghg      :     0.03s CPU (     407 calls,   0.000 s avg)
+
+     Called by h_psi:
+     add_vuspsi   :     0.00s CPU (     465 calls,   0.000 s avg)
+
+     General routines
+     calbec       :     0.00s CPU (     523 calls,   0.000 s avg)
+     cft3s        :     0.25s CPU (    7254 calls,   0.000 s avg)
+     interpolate  :     0.00s CPU (      10 calls,   0.000 s avg)
+     davcio       :     0.00s CPU (     522 calls,   0.000 s avg)
+ 
+     Parallel routines
+
+</current>
+        </string>
+        <curve id="E_scf">
+            <about>
+                <label>Energy vs. SCF iterations</label>
+            </about>
+            <xaxis>
+                <label>SCF iterations</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy</label>
+                <units>Ry</units>
+            </yaxis>
+            <component>
+                <xy>1  -15.83534820
+2  -15.83883689
+3  -15.83892741
+4  -15.83893370
+</xy>
+            </component>
+        </curve>
+        <curve id="E_ionic">
+            <about>
+                <label>Energy vs. ionic relaxations</label>
+            </about>
+            <xaxis>
+                <label>Ionic relaxation</label>
+            </xaxis>
+            <yaxis>
+                <label>Energy</label>
+                <units>Ry</units>
+            </yaxis>
+            <component>
+                <xy>1  -15.83892741
+</xy>
+            </component>
+        </curve>
+        <string id="data">
+            <about>
+                <label>Data</label>
+                <description>Forces, stress</description>
+            </about>
+            <current>===== Summary Data =====
+
+- Total Energy during SCF loop -
+SCF Step	Energy (Ryd)
+1 -15.83534820
+2 -15.83883689
+3 -15.83892741
+4 -15.83893370
+
+
+ -Final Forces -
+
+  Forces acting on atoms (Ry/au):
+
+ atom 1 type 1 force = 0.00000000 0.00000000 0.00000000
+ atom 2 type 1 force = 0.00000000 0.00000000 0.00000000
+
+ Total force = 0.000000 Total SCF correction = 0.000000
+
+
+- Final Stress -
+
+  total stress (Ry/bohr**3) (kbar) P= -33.20
+ -0.00022568 0.00000000 0.00000000 -33.20 0.00 0.00
+ 0.00000000 -0.00022568 -0.00000000 0.00 -33.20 -0.00
+ 0.00000000 -0.00000000 -0.00022568 0.00 -0.00 -33.20
+
+
+- Fermi Energy -
+
+6.4805</current>
+        </string>
+        <string id="input_pwx">
+            <about>
+                <label>Input file for pw.x (SCF calculation)</label>
+                <description>contents of input file used for the self-consistent field calculations</description>
+            </about>
+            <current>&amp;control
+prefix='qe'
+title='Silicon band structure'
+pseudo_dir='/apps/dftqe/r113/data/atoms_lda'
+outdir='/var/ion/data/sessions/2818634/dftqe587'
+tstress = .true.,
+tprnfor = .true.,
+
+/
+&amp;system
+ibrav= 2,celldm(1)= 10.2612121203,nat= 2, ntyp= 1,ecutwfc= 16.0,ecutrho= 96.0,nbnd=8,occupations='tetrahedra',
+degauss=0,
+
+/
+&amp;electrons
+electron_maxstep= ,
+conv_thr=1E-6,
+
+/
+ATOMIC_SPECIES
+Si 28.086 Si.UPF
+ATOMIC_POSITIONS crystal
+Si 0.0 0.0 0.0
+Si 0.25 0.25 0.25
+K_POINTS automatic
+8 8 8 0 0 0
+</current>
+        </string>
+        <string id="input_dosx">
+            <about>
+                <label>Input file for dos.x (DOS calculation)</label>
+                <description>contents of input file used for the DoS calculations</description>
+            </about>
+            <current>&amp;INPUTPP
+prefix='qe'
+outdir='/var/ion/data/sessions/2818634/dftqe587'
+Emax=10
+Emin=-6
+DeltaE=0.1
+/</current>
+        </string>
+        <string id="input_pwx2">
+            <about>
+                <label>Input file for pw.x (non-SCF calculation)</label>
+                <description>contents of input file used for the non self-consistent field calculations</description>
+            </about>
+            <current>&amp;control
+prefix='qe'
+title='Silicon band structure'
+pseudo_dir='/apps/dftqe/r113/data/atoms_lda'
+outdir='/var/ion/data/sessions/2818634/dftqe587'
+tstress = .true.,
+tprnfor = .true.,
+calculation='bands'
+
+/
+&amp;system
+ibrav= 2,celldm(1)= 10.2612121203,nat= 2, ntyp= 1,ecutwfc= 16.0,ecutrho= 96.0,nbnd=8,occupations='tetrahedra',
+degauss=0,
+
+/
+&amp;electrons
+electron_maxstep= ,
+conv_thr=1E-6,
+
+/
+ATOMIC_SPECIES
+Si 28.086 Si.UPF
+ATOMIC_POSITIONS crystal
+Si 0.0 0.0 0.0
+Si 0.25 0.25 0.25
+K_POINTS tpiba_b
+3
+0.5 0.5 0.5 5.0
+0.0 0.0 0.0 5.0
+1.0 0.0 0.0 5.0
+</current>
+        </string>
+        <string id="input_bandsx">
+            <about>
+                <label>Input file for bands.x (band structure calculation)</label>
+                <description>contents of input file used for the band structure calculations</description>
+            </about>
+            <current>&amp;inputpp
+prefix='qe'
+outdir='/var/ion/data/sessions/2818634/dftqe587'
+filband='qe.bands.dat'
+/</current>
+        </string>
+        <string id="input_plotbandx">
+            <about>
+                <label>Input file for plotband.x (band structure visualization)</label>
+                <description>contents of input file used for the band structure visualization</description>
+            </about>
+            <current>qe.bands.dat
+-1000 1000
+qe.bands.xmgr
+qe.bands.ps
+6.4805
+1.0, 6.4805
+</current>
+        </string>
+        <time>Sun Feb 22 02:50:38 PM EST 2026</time>
+        <status>ok</status>
+        <user>denphi</user>
+        <session>2818634</session>
+        <filename>/home/nanohub/denphi/data/results/2818634/run1771789836688000.xml</filename>
+        <version>1.7</version>
+    </output>
+    <meta>
+        <driver id="6629621e-a92f-4b80-410f-05d10efe23c1">
+            <source>rapptureUI</source>
+            <version>6716</version>
+            <time>Sun Feb 22 02:50:21 PM EST 2026</time>
+        </driver>
+        <generated>human</generated>
+        <driver id="a9472109-a35f-4097-6496-7f405441ba9f">
+            <source>toolParameters</source>
+            <version>6716</version>
+            <time>Sun Feb 22 02:50:27 PM EST 2026</time>
+        </driver>
+    </meta>
+</run>
+

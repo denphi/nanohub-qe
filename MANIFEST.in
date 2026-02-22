@@ -1,0 +1,14 @@
+include LICENSE
+include README.md
+include pyproject.toml
+recursive-include nanohubqe *.py
+recursive-include docs *.rst *.py *.ipynb
+recursive-include tutorials *.ipynb
+recursive-include tests *.py
+exclude run*.xml
+exclude example.xml
+prune .pytest_cache
+prune .mplconfig
+prune dist
+prune build
+prune src
