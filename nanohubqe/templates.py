@@ -637,9 +637,12 @@ def silicon_bands_dos_reference_workflow(
         outdir=outdir,
     )
     bands_control["title"] = title
+    bands_system = dict(common_system)
+    bands_system["occupations"] = "fixed"
+    bands_system.pop("degauss", None)
     bands_deck = PWInputDeck(
         control=bands_control,
-        system=common_system,
+        system=bands_system,
         electrons=common_electrons,
         atomic_species=common_species,
         atomic_positions=common_positions,
@@ -816,9 +819,12 @@ def bulk_electronic_phonon_workflow(
             outdir=outdir,
         )
         bands_control["title"] = title
+        bands_system = dict(common_system)
+        bands_system["occupations"] = "fixed"
+        bands_system.pop("degauss", None)
         bands_deck = PWInputDeck(
             control=bands_control,
-            system=common_system,
+            system=bands_system,
             electrons=common_electrons,
             atomic_species=common_species,
             atomic_positions=atoms,

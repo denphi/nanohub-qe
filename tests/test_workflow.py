@@ -75,6 +75,9 @@ def test_silicon_bands_dos_reference_workflow_runs_expected_steps(tmp_path) -> N
     assert "&BANDS" in bands_pp_text
     assert "filband = 'qe.bands.dat'" in bands_pp_text
 
+    bands_pw_text = results["bands_pw"].input_file.read_text(encoding="utf-8")
+    assert "occupations = 'fixed'" in bands_pw_text
+
 
 def test_bulk_configurable_workflow_supports_structure_and_phonons(tmp_path) -> None:
     workflow = bulk_electronic_phonon_workflow(
@@ -120,3 +123,6 @@ def test_bulk_configurable_workflow_uses_valid_dos_and_bands_namelists(tmp_path)
     bands_pp_text = results["bands_pp"].input_file.read_text(encoding="utf-8")
     assert "&BANDS" in bands_pp_text
     assert "filband = 'qe.bands.dat'" in bands_pp_text
+
+    bands_pw_text = results["bands_pw"].input_file.read_text(encoding="utf-8")
+    assert "occupations = 'fixed'" in bands_pw_text
