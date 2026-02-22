@@ -157,7 +157,7 @@ def test_run_step_submit_adds_generated_inputfile(tmp_path) -> None:
         dry_run=True,
     )
 
-    assert "submit --venue nanohub dos.x -in dos.in" == result.stdout
+    assert "submit --venue nanohub -i dos.in dos.x -in dos.in" == result.stdout
 
 
 def test_run_submit_matches_nanohub_style_pw_command(tmp_path) -> None:
@@ -179,7 +179,7 @@ def test_run_submit_matches_nanohub_style_pw_command(tmp_path) -> None:
 
     assert (
         "submit -n 2 -w 01:00:00 --manager espresso-6.8_mpi-cleanup_pw "
-        "--runName si-job -i pseudo/Si.UPF espresso-7.1_pw -i qe.in"
+        "--runName si-job -i pseudo/Si.UPF -i qe.in espresso-7.1_pw -i qe.in"
     ) == result.stdout
 
 

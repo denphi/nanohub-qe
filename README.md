@@ -130,7 +130,7 @@ submit_cfg = SubmitConfig(
     walltime="02:00:00",
     manager="espresso-6.8_mpi-cleanup_pw",
     run_name="si-scf",
-    input_files=["pseudo/Si.UPF"],  # additional inputs; qe.in is added automatically
+    input_files=["pseudo/Si.UPF"],  # additional inputs; qe.in is staged automatically
     executable_prefix="espresso-7.1",  # pw.x -> espresso-7.1_pw
     env={"ESPRESSO_PSEUDO": "./pseudo"},
 )
@@ -139,10 +139,7 @@ submit_cfg = SubmitConfig(
 result = runner.run(deck, workdir="runs/remote-si", submit_config=submit_cfg, dry_run=True)
 print(result.stdout)
 # submit -n 16 -w 02:00:00 --manager espresso-6.8_mpi-cleanup_pw --runName si-scf \
-#   -i pseudo/Si.UPF espresso-7.1_pw -i qe.in
-
-# If your venue requires staging qe.in as a submit input too:
-# submit_cfg.stage_input_file = True
+#   -i pseudo/Si.UPF -i qe.in espresso-7.1_pw -i qe.in
 ```
 
 For multi-step workflows, use `sim.run_submit(...)` to submit, wait, and sync:

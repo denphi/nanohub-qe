@@ -40,7 +40,7 @@ class SubmitConfig:
     # If None and executable_prefix/executable_map is used, defaults to "-i".
     program_input_flag: str | None = None
     # If True, append the generated step input file to submit "-i" inputs.
-    stage_input_file: bool = False
+    stage_input_file: bool = True
     # Optional templates for status/download commands used by run_submit workflows.
     # Available placeholders: {run_name}, {step_name}, {workdir}
     status_command_template: str | None = None
