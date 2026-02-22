@@ -42,4 +42,3 @@ and phonon branches.
 Each step records expected/discovered outputs and workflow-level records:
 
 - ``workflow_outputs.json``
-- ``run.xml``

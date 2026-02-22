@@ -6,7 +6,7 @@
 - Use ready-to-run templates for common real simulation cases
 - Execute locally (mixed QE executables) or remotely via HUBzero `submit`
 - Parse and visualize QE outputs (energy convergence, bands, DOS, PDOS, phonons)
-- Record workflow outputs in JSON and Rappture-style `run.xml`
+- Record workflow outputs in JSON
 
 The package name is `nanohub-qe`, imported as `nanohubqe`.
 
@@ -127,7 +127,6 @@ print(results["projwfc"].stdout)  # projwfc.x -in projwfc.in
 
 # auto-generated records:
 # - runs/al-dos/workflow_outputs.json
-# - runs/al-dos/run.xml
 print(results["dos"].expected_outputs)
 print([p.name for p in results["dos"].discovered_outputs])
 ```
@@ -178,7 +177,7 @@ print(results["matdyn"].stdout)  # matdyn.x -in matdyn.in
 ## Parse QE Output
 
 ```python
-from nanohubqe import parse_run_xml, read_dos, read_matdyn_freq, read_pdos, read_pw_output
+from nanohubqe import read_dos, read_matdyn_freq, read_pdos, read_pw_output
 
 summary = read_pw_output("runs/si/qe.out")
 print(summary.final_total_energy_ry)
@@ -188,8 +187,6 @@ print(summary.completed)
 dos = read_dos("runs/al-dos/al_dos.dos")
 pdos = read_pdos("runs/al-dos/al_dos.pdos_atm#1(Al)_wfc#1(s)")
 phonons = read_matdyn_freq("runs/si-ph/si_ph.freq")
-run = parse_run_xml("runs/al-dos/run.xml")
-print(run.status, list(run.output_curves)[:3])
 ```
 
 ## Plot Results
@@ -200,7 +197,6 @@ from nanohubqe import (
     plot_dos,
     plot_pdos,
     plot_phonon_dispersion,
-    plot_run_curve,
     plot_total_energy,
 )
 
@@ -214,8 +210,6 @@ plot_phonon_dispersion("runs/si-ph/si_ph.freq", backend="matplotlib")
 # plotly backend
 fig = plot_dos("runs/si_dos/si.dos", backend="plotly")
 fig.show()
-fig2 = plot_run_curve("runs/al-dos/run.xml", "E_scf", backend="plotly")
-fig2.show()
 ```
 
 ## Notes
