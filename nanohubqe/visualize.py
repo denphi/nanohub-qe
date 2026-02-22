@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from .driver import NanoHUBRun, RunCurve, parse_run_xml
 from .parser import (
     DOSData,
     PDOSData,
@@ -92,69 +91,6 @@ def plot_total_energy(
         title="QE Energy Convergence",
         xaxis_title="Iteration",
         yaxis_title=ylabel,
-        template="plotly_white",
-    )
-    return figure
-
-
-def plot_run_curve(
-    run_or_path: NanoHUBRun | str | Path,
-    curve_id: str,
-    *,
-    backend: str = "matplotlib",
-    ax=None,
-):
-    """Plot a curve from a Rappture/nanoHUB run XML output section."""
-
-    if isinstance(run_or_path, NanoHUBRun):
-        run = run_or_path
-    else:
-        run = parse_run_xml(run_or_path)
-
-    if curve_id not in run.output_curves:
-        known = ", ".join(sorted(run.output_curves)) or "(none)"
-        raise ValueError(f"Curve '{curve_id}' not found. Available: {known}")
-
-    curve = run.output_curves[curve_id]
-    return plot_curve_data(curve, backend=backend, ax=ax)
-
-
-def plot_curve_data(
-    curve: RunCurve,
-    *,
-    backend: str = "matplotlib",
-    ax=None,
-):
-    """Plot a `RunCurve` with matplotlib or plotly backend."""
-
-    backend_name = _validate_backend(backend)
-
-    if backend_name == "matplotlib":
-        plt = _import_matplotlib()
-        if ax is None:
-            _, ax = plt.subplots(figsize=(7.0, 4.5))
-        ax.plot(curve.x, curve.y, linewidth=1.4)
-        ax.set_xlabel(curve.x_label or "x")
-        y_label = curve.y_label or "y"
-        if curve.y_units:
-            y_label = f"{y_label} ({curve.y_units})"
-        ax.set_ylabel(y_label)
-        ax.set_title(curve.curve_id)
-        ax.grid(True, alpha=0.25)
-        return ax
-
-    go = _import_plotly()
-    figure = go.Figure()
-    figure.add_trace(
-        go.Scatter(x=curve.x, y=curve.y, mode="lines", name=curve.curve_id)
-    )
-    y_label = curve.y_label or "y"
-    if curve.y_units:
-        y_label = f"{y_label} ({curve.y_units})"
-    figure.update_layout(
-        title=curve.curve_id,
-        xaxis_title=curve.x_label or "x",
-        yaxis_title=y_label,
         template="plotly_white",
     )
     return figure

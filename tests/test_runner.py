@@ -99,4 +99,3 @@ def test_run_workflow_writes_output_record_manifest(tmp_path) -> None:
     assert record["workflow"] == "silicon_bands"
     assert "scf" in record["steps"]
     assert "bands" in record["steps"]
-    assert (tmp_path / "run.xml").exists()

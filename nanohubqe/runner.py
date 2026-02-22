@@ -285,7 +285,6 @@ class QERunner:
         input_suffix: str = ".in",
         output_suffix: str = ".out",
         output_record_filename: str | None = "workflow_outputs.json",
-        run_xml_filename: str | None = "run.xml",
     ) -> dict[str, ExecutionResult]:
         """Run each step in a `QEWorkflow` sequentially."""
 
@@ -314,12 +313,6 @@ class QERunner:
             self.write_workflow_output_record(
                 results,
                 base_dir / output_record_filename,
-                workflow_name=workflow.name,
-            )
-        if run_xml_filename:
-            self.write_workflow_run_xml(
-                results,
-                base_dir / run_xml_filename,
                 workflow_name=workflow.name,
             )
         return results
@@ -371,30 +364,6 @@ class QERunner:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
         return output_path
-
-    @staticmethod
-    def write_workflow_run_xml(
-        results: Mapping[str, ExecutionResult],
-        path: str | Path,
-        *,
-        workflow_name: str | None = None,
-        tool_id: str = "nanohubqe",
-        tool_name: str = "nanohub-qe",
-        tool_command: str | None = None,
-    ) -> Path:
-        """Write a Rappture-style run.xml with step inputs and outputs."""
-
-        from .driver import build_run_xml_from_results
-
-        run = build_run_xml_from_results(
-            results,
-            workflow_name=workflow_name,
-            tool_id=tool_id,
-            tool_name=tool_name,
-            tool_command=tool_command,
-        )
-        return run.write(path)
-
 
 def submit_env(**variables: str) -> Mapping[str, str]:
     """Small helper to build submit environment mappings."""

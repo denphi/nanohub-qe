@@ -2,14 +2,11 @@ from __future__ import annotations
 
 from nanohubqe import (
     DOSData,
-    NanoHUBRun,
     PDOSData,
     PhononDispersion,
-    RunCurve,
     plot_dos,
     plot_pdos,
     plot_phonon_dispersion,
-    plot_run_curve,
 )
 
 
@@ -42,20 +39,3 @@ def test_plot_phonon_dispersion_supports_matplotlib_backend() -> None:
     )
     axis = plot_phonon_dispersion(data, backend="matplotlib")
     assert hasattr(axis, "plot")
-
-
-def test_plot_run_curve_supports_plotly_backend() -> None:
-    run = NanoHUBRun(
-        output_curves={
-            "E_scf": RunCurve(
-                curve_id="E_scf",
-                x=[1.0, 2.0, 3.0],
-                y=[-15.7, -15.8, -15.9],
-                x_label="SCF",
-                y_label="Energy",
-                y_units="Ry",
-            )
-        }
-    )
-    figure = plot_run_curve(run, "E_scf", backend="plotly")
-    assert hasattr(figure, "to_dict")
