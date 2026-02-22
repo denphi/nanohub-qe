@@ -22,3 +22,9 @@ venv/
 
 # macOS
 .DS_Store
+
+# Sphinx build output
+docs/_build/
+
+# Sphinx build output
+docs/_build/
