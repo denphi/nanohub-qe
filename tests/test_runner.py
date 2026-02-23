@@ -177,6 +177,30 @@ def _write_fake_submit_status_unknown(script_path: Path) -> None:
     script_path.chmod(0o755)
 
 
+def _write_fake_submit_status_unknown_but_done(script_path: Path) -> None:
+    script_path.write_text(
+        (
+            "#!/usr/bin/env python3\n"
+            "import pathlib\n"
+            "import sys\n"
+            "\n"
+            "args = sys.argv[1:]\n"
+            "workdir = pathlib.Path.cwd()\n"
+            "if '--status' in args or (args and args[0] == 'status'):\n"
+            "    print('status: ???')\n"
+            "    raise SystemExit(0)\n"
+            "log = workdir / 'submit_unknown_but_done_calls.txt'\n"
+            "calls = int(log.read_text(encoding='utf-8')) if log.exists() else 0\n"
+            "log.write_text(str(calls + 1), encoding='utf-8')\n"
+            "print('Simulation Done at ncn@negishi Mon Feb 23 11:26:58 2026')\n"
+            "print('JOB DONE.')\n"
+            "raise SystemExit(0)\n"
+        ),
+        encoding="utf-8",
+    )
+    script_path.chmod(0o755)
+
+
 def _write_fake_submit_out_of_service(script_path: Path) -> None:
     script_path.write_text(
         (
@@ -571,6 +595,29 @@ def test_run_workflow_submit_verbose_logs_commands(tmp_path: Path, capsys) -> No
     assert "no download command candidates configured" in captured.out
 
 
+def test_run_workflow_submit_shows_wait_feedback_by_default(tmp_path: Path, capsys) -> None:
+    submit_script = tmp_path / "submit"
+    _write_fake_submit(submit_script)
+
+    workflow = silicon_bands_workflow()
+    _touch_workflow_pseudos(workflow, tmp_path)
+    runner = QERunner(default_backend="submit", submit_executable=str(submit_script))
+
+    runner.run_workflow_submit(
+        workflow,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(run_name="si-remote"),
+        wait=True,
+        sync_outputs=False,
+        poll_interval=0.01,
+        wait_timeout=5.0,
+    )
+
+    captured = capsys.readouterr()
+    assert "waiting for step 'scf'" in captured.out
+    assert "status=completed" in captured.out
+
+
 def test_run_workflow_submit_stops_on_unknown_status_when_strict(tmp_path: Path) -> None:
     submit_script = tmp_path / "submit"
     _write_fake_submit_status_unknown(submit_script)
@@ -593,6 +640,36 @@ def test_run_workflow_submit_stops_on_unknown_status_when_strict(tmp_path: Path)
     assert results["scf"].returncode == 1
     assert "Remote status for step 'scf' is unknown" in results["scf"].stderr
     assert (tmp_path / "submit_attempts_unknown.txt").read_text(encoding="utf-8").strip() == "1"
+
+
+def test_run_workflow_submit_unknown_status_can_infer_success_from_output(
+    tmp_path: Path,
+) -> None:
+    submit_script = tmp_path / "submit"
+    _write_fake_submit_status_unknown_but_done(submit_script)
+
+    workflow = silicon_bands_workflow()
+    _touch_workflow_pseudos(workflow, tmp_path)
+    runner = QERunner(default_backend="submit", submit_executable=str(submit_script))
+
+    results = runner.run_workflow_submit(
+        workflow,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(run_name="si-remote"),
+        wait=True,
+        sync_outputs=False,
+        poll_interval=0.01,
+        wait_timeout=1.0,
+    )
+
+    assert set(results) == {"scf", "bands"}
+    assert results["scf"].ok
+    assert results["bands"].ok
+    assert results["scf"].remote_status == "completed"
+    assert results["bands"].remote_status == "completed"
+    assert (
+        tmp_path / "submit_unknown_but_done_calls.txt"
+    ).read_text(encoding="utf-8").strip() == "2"
 
 
 def test_run_workflow_submit_fails_when_expected_outputs_are_missing(tmp_path: Path) -> None:

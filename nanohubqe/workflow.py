@@ -234,6 +234,7 @@ class QEWorkflow:
             input_suffix=input_suffix,
             output_suffix=output_suffix,
             output_record_filename=output_record_filename,
+            auto_prepare_pseudopotentials=False,
         )
         self._last_results = results
         self._last_workdir = Path(workdir)
@@ -261,6 +262,7 @@ class QEWorkflow:
         pseudo_local_search_dirs: Sequence[str | Path] | None = None,
         pseudo_timeout: float = 20.0,
         pseudo_overwrite: bool = False,
+        show_wait_feedback: bool = True,
     ) -> QEWorkflow:
         """Submit this workflow and optionally wait/sync outputs for plotting."""
 
@@ -292,6 +294,8 @@ class QEWorkflow:
             input_suffix=input_suffix,
             output_suffix=output_suffix,
             output_record_filename=output_record_filename,
+            auto_prepare_pseudopotentials=False,
+            show_wait_feedback=show_wait_feedback,
         )
         self._last_results = results
         self._last_workdir = Path(workdir)

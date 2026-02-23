@@ -180,6 +180,10 @@ sim.run_submit(
     sync_outputs=True, # try submit download/fetch commands
 )
 
+# While waiting, nanohubqe prints step status updates by default.
+# To disable wait feedback:
+# sim.run_submit(..., show_wait_feedback=False)
+
 print(sim.step_result("dos").remote_status)
 sim.plot_dos(backend="plotly")
 

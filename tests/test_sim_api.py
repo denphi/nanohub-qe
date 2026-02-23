@@ -185,9 +185,10 @@ def test_prepare_pseudopotentials_delegates_to_helper(monkeypatch) -> None:
 
 def test_run_auto_prepares_pseudopotentials_before_execution(tmp_path: Path, monkeypatch) -> None:
     sim = silicon_bands_workflow(pseudo_file="Si.UPF", pseudo_dir="./pseudo")
-    captured: dict[str, object] = {}
+    captured: dict[str, object] = {"calls": 0}
 
     def fake_ensure(workflow, **kwargs):
+        captured["calls"] += 1
         captured["workflow"] = workflow
         captured["kwargs"] = kwargs
         return []
@@ -197,6 +198,7 @@ def test_run_auto_prepares_pseudopotentials_before_execution(tmp_path: Path, mon
     runner = QERunner(default_backend="local", pw_executable="true")
     sim.run(workdir=tmp_path, runner=runner, dry_run=False)
 
+    assert captured["calls"] == 1
     assert captured["workflow"] is sim
     assert captured["kwargs"]["workdir"] == tmp_path
 
@@ -208,9 +210,10 @@ def test_run_submit_auto_prepares_pseudopotentials_before_submission(
     _write_fake_submit(submit_script)
 
     sim = silicon_bands_workflow(pseudo_file="Si.UPF", pseudo_dir="./pseudo")
-    captured: dict[str, object] = {}
+    captured: dict[str, object] = {"calls": 0}
 
     def fake_ensure(workflow, **kwargs):
+        captured["calls"] += 1
         pseudo_path = Path(kwargs["workdir"]) / "pseudo" / "Si.UPF"
         pseudo_path.parent.mkdir(parents=True, exist_ok=True)
         pseudo_path.write_text("pseudo\n", encoding="utf-8")
@@ -231,6 +234,7 @@ def test_run_submit_auto_prepares_pseudopotentials_before_submission(
     )
 
     assert set(sim.results) == {"scf", "bands"}
+    assert captured["calls"] == 1
     assert captured["workflow"] is sim
     assert captured["kwargs"]["workdir"] == tmp_path
 

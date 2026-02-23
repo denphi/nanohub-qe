@@ -573,6 +573,7 @@ class QERunner:
         poll_interval: float = 20.0,
         wait_timeout: float | None = None,
         verbose: bool | None = None,
+        show_progress: bool = True,
     ) -> tuple[str, str]:
         """Wait for a submitted run to complete using submit status queries."""
 
@@ -580,6 +581,12 @@ class QERunner:
         base_dir = Path(workdir)
         start = time.monotonic()
         last_output = ""
+        if show_progress:
+            print(
+                f"[nanohubqe] waiting for step '{step_name}' "
+                f"(run '{run_name}') ...",
+                flush=True,
+            )
 
         while True:
             status, output_text = self._query_submit_status(
@@ -594,6 +601,13 @@ class QERunner:
                 verbose_enabled,
                 f"[nanohubqe] submit status for '{run_name}' ({step_name}): {status}",
             )
+            elapsed_s = time.monotonic() - start
+            if show_progress:
+                print(
+                    f"[nanohubqe] step '{step_name}' status={status} "
+                    f"elapsed={elapsed_s:.0f}s",
+                    flush=True,
+                )
             last_output = output_text
             if status == "completed":
                 return status, output_text
@@ -813,6 +827,29 @@ class QERunner:
             if not list(workdir.glob(pattern)):
                 missing.append(f"glob:{pattern}")
         return missing
+
+    @staticmethod
+    def _output_indicates_success(output_file: Path) -> bool:
+        if not output_file.exists():
+            return False
+        try:
+            text = output_file.read_text(encoding="utf-8", errors="ignore").lower()
+        except OSError:
+            return False
+
+        success_markers = (
+            "job done",
+            "simulation done",
+            "convergence has been achieved",
+        )
+        fatal_markers = (
+            "error in routine",
+            "all specified venues are out of service",
+            "command line argument parsing failed",
+        )
+        return any(marker in text for marker in success_markers) and not any(
+            marker in text for marker in fatal_markers
+        )
 
     @staticmethod
     def _submit_qe_command_variants(step: QEStep, step_command: list[str]) -> list[list[str]]:
@@ -1377,6 +1414,7 @@ class QERunner:
         pseudo_local_search_dirs: Sequence[str | Path] | None = None,
         pseudo_timeout: float = 20.0,
         pseudo_overwrite: bool = False,
+        show_wait_feedback: bool = True,
     ) -> dict[str, ExecutionResult]:
         """Submit each workflow step and optionally wait/sync outputs."""
 
@@ -1451,6 +1489,7 @@ class QERunner:
                         poll_interval=poll_interval,
                         wait_timeout=wait_timeout,
                         verbose=verbose_enabled,
+                        show_progress=show_wait_feedback,
                     )
                     result.remote_status = remote_status
                     if status_text.strip():
@@ -1480,18 +1519,28 @@ class QERunner:
                     and step_submit_config.require_expected_outputs
                     and result.remote_status in {None, "unknown"}
                 ):
-                    result.returncode = 1
-                    error_text = (
-                        f"Remote status for step '{step_name}' is unknown; cannot safely continue "
-                        "workflow dependencies. Configure SubmitConfig.status_command_template "
-                        "to a command that reports a parseable state, or set "
-                        "SubmitConfig.require_expected_outputs=False to proceed."
-                    )
-                    if result.stderr:
-                        result.stderr = result.stderr + "\n" + error_text
+                    if self._output_indicates_success(result.output_file):
+                        result.remote_status = "completed"
+                        self._verbose_print(
+                            verbose_enabled,
+                            (
+                                f"[nanohubqe] step '{step_name}' inferred completed "
+                                "from output log despite unknown submit status"
+                            ),
+                        )
                     else:
-                        result.stderr = error_text
-                    break
+                        result.returncode = 1
+                        error_text = (
+                            f"Remote status for step '{step_name}' is unknown; cannot safely continue "
+                            "workflow dependencies. Configure SubmitConfig.status_command_template "
+                            "to a command that reports a parseable state, or set "
+                            "SubmitConfig.require_expected_outputs=False to proceed."
+                        )
+                        if result.stderr:
+                            result.stderr = result.stderr + "\n" + error_text
+                        else:
+                            result.stderr = error_text
+                        break
 
             if sync_outputs and result.remote_run_name:
                 result.outputs_synced = self.sync_submit_run_outputs(
