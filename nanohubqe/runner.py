@@ -342,6 +342,8 @@ class QERunner:
             config.input_files.append(input_filename)
         config.env.update(step.env)
         config = self._normalize_submit_manager(config)
+        if config.venue and config.venue.strip().lower() == "nanohub":
+            config.venue = None
         if config.sanitize_run_name and config.run_name:
             config.run_name = self._sanitize_submit_run_name(config.run_name)
         return config
@@ -374,12 +376,23 @@ class QERunner:
 
         text = ((process.stdout or "") + "\n" + (process.stderr or "")).lower()
         fatal_markers = (
+            "all specified venues are out of service",
+            "please select another venue or attempt execution at a later time",
             "command line argument parsing failed",
             "runname contains non-alphanumeric characters",
             "invalid manager",
             "unknown manager",
         )
         return any(marker in text for marker in fatal_markers)
+
+    @staticmethod
+    def _is_submit_venue_outage_error(process: subprocess.CompletedProcess[str]) -> bool:
+        text = ((process.stdout or "") + "\n" + (process.stderr or "")).lower()
+        markers = (
+            "all specified venues are out of service",
+            "please select another venue or attempt execution at a later time",
+        )
+        return any(marker in text for marker in markers)
 
     @staticmethod
     def _render_submit_template(

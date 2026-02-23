@@ -221,7 +221,7 @@ def _write_fake_submit_out_of_service_when_venue(script_path: Path) -> None:
 def test_build_submit_command_includes_common_flags() -> None:
     runner = QERunner()
     submit_cfg = SubmitConfig(
-        venue="nanohub",
+        venue="clusterx",
         n_cpus=8,
         wall_time="01:30:00",
         manager="espresso-7.1_mpi-cleanup_pw",
@@ -292,11 +292,26 @@ def test_run_step_submit_adds_generated_inputfile(tmp_path) -> None:
         step,
         step_name="dos",
         workdir=tmp_path,
+        submit_config=SubmitConfig(venue="clusterx"),
+        dry_run=True,
+    )
+
+    assert "submit --venue clusterx -i dos.in dos.x -in dos.in" == result.stdout
+
+
+def test_run_step_submit_omits_default_nanohub_venue(tmp_path) -> None:
+    runner = QERunner(default_backend="submit")
+    step = QEStep(executable="dos.x", input_text="&DOS\n/\n")
+
+    result = runner.run_step(
+        step,
+        step_name="dos",
+        workdir=tmp_path,
         submit_config=SubmitConfig(venue="nanohub"),
         dry_run=True,
     )
 
-    assert "submit --venue nanohub -i dos.in dos.x -in dos.in" == result.stdout
+    assert "--venue" not in result.stdout
 
 
 def test_run_step_submit_optional_inputs_can_be_missing(tmp_path) -> None:
