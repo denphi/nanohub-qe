@@ -59,10 +59,12 @@ wait for completion, and sync outputs for plotting.
    submit_cfg = SubmitConfig(
        nodes=4,
        walltime="00:30:00",
-       manager="espresso-6.8_mpi-cleanup_pw",
+       manager="espresso-7.1_mpi-cleanup_pw",
        run_name="si-reference-remote",
        executable_prefix="espresso-7.1",
    )
+
+   # If manager is omitted (or version-mismatched), it is aligned to executable_prefix.
 
    sim.run_submit(
        workdir="runs/si-remote",

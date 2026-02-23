@@ -49,6 +49,8 @@ class SubmitConfig:
     results_search_dirs: list[str] = field(default_factory=list)
     # If True, fail a submit workflow step when expected outputs are unavailable.
     require_expected_outputs: bool = True
+    # If True, align espresso manager version with executable_prefix (when possible).
+    align_manager_with_executable_prefix: bool = True
 
 
 @dataclass
@@ -239,7 +241,39 @@ class QERunner:
             download_command_template=config.download_command_template,
             results_search_dirs=list(config.results_search_dirs),
             require_expected_outputs=config.require_expected_outputs,
+            align_manager_with_executable_prefix=config.align_manager_with_executable_prefix,
         )
+
+    @staticmethod
+    def _espresso_version_token(value: str | None) -> str | None:
+        if not value:
+            return None
+        match = re.match(r"^(espresso-\d+(?:\.\d+)*)(?:_|$)", value)
+        if match:
+            return match.group(1)
+        return None
+
+    def _normalize_submit_manager(self, config: SubmitConfig) -> SubmitConfig:
+        if not config.align_manager_with_executable_prefix:
+            return config
+
+        executable_token = self._espresso_version_token(config.executable_prefix)
+        if executable_token is None:
+            return config
+
+        if config.manager is None:
+            config.manager = f"{executable_token}_mpi-cleanup_pw"
+            return config
+
+        manager_token = self._espresso_version_token(config.manager)
+        if manager_token is None or manager_token == executable_token:
+            return config
+
+        suffix = config.manager[len(manager_token) :]
+        if not suffix:
+            suffix = "_mpi-cleanup_pw"
+        config.manager = f"{executable_token}{suffix}"
+        return config
 
     @staticmethod
     def _submit_pseudo_inputs(step: QEStep) -> list[str]:
@@ -273,12 +307,12 @@ class QERunner:
         if config.stage_input_file and input_filename and input_filename not in config.input_files:
             config.input_files.append(input_filename)
         config.env.update(step.env)
-        return config
+        return self._normalize_submit_manager(config)
 
     @staticmethod
     def _parse_submit_job_id(text: str) -> str | None:
         patterns = [
-            r"\bjob(?:\s+id)?\s*[:=#]?\s*([A-Za-z0-9._:-]+)",
+            r"\bjob\s+id\s*[:=#]?\s*([A-Za-z0-9._:-]+)",
             r"\brun(?:\s+id)?\s*[:=#]?\s*([A-Za-z0-9._:-]+)",
             r"\bsubmitted(?:\s+as)?\s+([A-Za-z0-9._:-]+)",
         ]
@@ -287,6 +321,15 @@ class QERunner:
             if match:
                 return match.group(1)
         return None
+
+    @staticmethod
+    def _is_submit_submission_accepted(process: subprocess.CompletedProcess[str]) -> bool:
+        """Detect submit variants that return non-zero even after successful enqueue."""
+
+        text = ((process.stdout or "") + "\n" + (process.stderr or "")).lower()
+        has_registered = "registered" in text and "job instance" in text
+        has_release = "released for submission" in text
+        return has_registered and has_release
 
     @staticmethod
     def _render_submit_template(
@@ -847,7 +890,13 @@ class QERunner:
         )
 
         retry_notes: list[str] = []
-        if submitted and process.returncode != 0 and effective_submit_config is not None:
+        submit_accepted = submitted and self._is_submit_submission_accepted(process)
+        if (
+            submitted
+            and process.returncode != 0
+            and effective_submit_config is not None
+            and not submit_accepted
+        ):
             def summarize_attempt(cmd: list[str], proc: subprocess.CompletedProcess[str]) -> str:
                 combined = self._combine_process_output(proc).strip()
                 return f"[{proc.returncode}] {shlex.join(cmd)} :: {combined}"
@@ -922,26 +971,33 @@ class QERunner:
                 )
                 retry_notes.append(summarize_attempt(retry_command, retry_process))
 
-                if retry_process.returncode == 0:
+                retry_accepted = self._is_submit_submission_accepted(retry_process)
+                if retry_process.returncode == 0 or retry_accepted:
                     process = retry_process
                     command = retry_command
                     effective_submit_config = retry_cfg
+                    submit_accepted = retry_accepted
                     break
+
+        if submitted and not submit_accepted:
+            submit_accepted = self._is_submit_submission_accepted(process)
+
+        effective_returncode = 0 if (submitted and submit_accepted) else process.returncode
 
         combined_output = process.stdout
         if process.stderr:
             combined_output = process.stdout + "\n" + process.stderr
-        if retry_notes and process.returncode != 0:
+        if retry_notes and effective_returncode != 0:
             combined_output = (combined_output + "\n\nRetry attempts:\n" + "\n".join(retry_notes)).strip()
-        elif retry_notes and process.returncode == 0:
+        elif retry_notes and effective_returncode == 0:
             combined_output = (combined_output + "\n\nRetry attempts:\n" + "\n".join(retry_notes)).strip()
 
         output_path.write_text(combined_output, encoding="utf-8")
 
         discovered_outputs = self._discover_outputs(workdir_path, resolved_step, output_path)
         job_id = self._parse_submit_job_id(process.stdout + "\n" + process.stderr)
-        error_text = process.stderr if process.stderr else (process.stdout if process.returncode != 0 else "")
-        if retry_notes and process.returncode != 0:
+        error_text = process.stderr if process.stderr else (process.stdout if effective_returncode != 0 else "")
+        if retry_notes and effective_returncode != 0:
             note_text = "\n".join(retry_notes)
             if error_text:
                 error_text = error_text + "\n\nRetry attempts:\n" + note_text
@@ -950,7 +1006,7 @@ class QERunner:
 
         return ExecutionResult(
             command=command,
-            returncode=process.returncode,
+            returncode=effective_returncode,
             stdout=process.stdout,
             stderr=error_text,
             workdir=workdir_path,
@@ -963,6 +1019,7 @@ class QERunner:
                 effective_submit_config.run_name if effective_submit_config is not None else None
             ),
             remote_job_id=job_id if submitted else None,
+            remote_status=("submitted" if submitted and effective_returncode == 0 else None),
         )
 
     def run_workflow(

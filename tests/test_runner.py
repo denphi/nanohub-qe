@@ -112,13 +112,32 @@ def _write_fake_submit_without_dos(script_path: Path) -> None:
     script_path.chmod(0o755)
 
 
+def _write_fake_submit_rc1_but_submitted(script_path: Path) -> None:
+    script_path.write_text(
+        (
+            "#!/usr/bin/env python3\n"
+            "import pathlib\n"
+            "\n"
+            "workdir = pathlib.Path.cwd()\n"
+            "counter = workdir / 'submit_calls.txt'\n"
+            "calls = int(counter.read_text(encoding='utf-8')) if counter.exists() else 0\n"
+            "counter.write_text(str(calls + 1), encoding='utf-8')\n"
+            "print('Run 10551771 registered 1 job instance. Mon Feb 23 09:36:49 2026')\n"
+            "print('Run 10551771 instance 1 released for submission. Mon Feb 23 09:36:54 2026')\n"
+            "raise SystemExit(1)\n"
+        ),
+        encoding="utf-8",
+    )
+    script_path.chmod(0o755)
+
+
 def test_build_submit_command_includes_common_flags() -> None:
     runner = QERunner()
     submit_cfg = SubmitConfig(
         venue="nanohub",
         n_cpus=8,
         wall_time="01:30:00",
-        manager="espresso-6.8_mpi-cleanup_pw",
+        manager="espresso-7.1_mpi-cleanup_pw",
         run_name="si-test",
         input_files=["qe.in"],
         env={"ESPRESSO_TMPDIR": "./tmp"},
@@ -193,9 +212,50 @@ def test_run_submit_matches_nanohub_style_pw_command(tmp_path) -> None:
     )
 
     assert (
-        "submit -n 2 -w 01:00:00 --manager espresso-6.8_mpi-cleanup_pw "
+        "submit -n 2 -w 01:00:00 --manager espresso-7.1_mpi-cleanup_pw "
         "--runName si-job -i pseudo/Si.UPF -i qe.in espresso-7.1_pw -i qe.in"
     ) == result.stdout
+
+
+def test_submit_manager_defaults_from_executable_prefix(tmp_path) -> None:
+    runner = QERunner(default_backend="submit")
+    deck = silicon_scf(pseudo_file="Si.UPF", pseudo_dir="./pseudo")
+
+    result = runner.run(
+        deck,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(
+            nodes=2,
+            walltime="01:00:00",
+            run_name="si-job",
+            executable_prefix="espresso-7.1",
+        ),
+        dry_run=True,
+    )
+
+    assert "--manager espresso-7.1_mpi-cleanup_pw" in result.stdout
+
+
+def test_submit_rc1_registered_release_is_treated_as_success(tmp_path) -> None:
+    submit_script = tmp_path / "submit"
+    _write_fake_submit_rc1_but_submitted(submit_script)
+    pseudo_dir = tmp_path / "pseudo"
+    pseudo_dir.mkdir(parents=True, exist_ok=True)
+    (pseudo_dir / "Si.UPF").write_text("pseudo\n", encoding="utf-8")
+
+    runner = QERunner(default_backend="submit", submit_executable=str(submit_script))
+    result = runner.run(
+        silicon_scf(pseudo_file="Si.UPF", pseudo_dir="./pseudo"),
+        workdir=tmp_path,
+        submit_config=SubmitConfig(run_name="dbg-submit"),
+        dry_run=False,
+    )
+
+    assert result.returncode == 0
+    assert result.submitted
+    assert result.remote_status == "submitted"
+    assert result.remote_job_id == "10551771"
+    assert (tmp_path / "submit_calls.txt").read_text(encoding="utf-8").strip() == "1"
 
 
 def test_run_step_records_expected_and_discovered_outputs(tmp_path) -> None:

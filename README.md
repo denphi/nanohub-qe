@@ -128,17 +128,20 @@ runner = QERunner(default_backend="submit")
 submit_cfg = SubmitConfig(
     nodes=16,
     walltime="02:00:00",
-    manager="espresso-6.8_mpi-cleanup_pw",
+    manager="espresso-7.1_mpi-cleanup_pw",
     run_name="si-scf",
     input_files=["pseudo/Si.UPF"],  # additional inputs; qe.in is staged automatically
     executable_prefix="espresso-7.1",  # pw.x -> espresso-7.1_pw
     env={"ESPRESSO_PSEUDO": "./pseudo"},
 )
 
+# If manager is omitted (or uses a different espresso version),
+# nanohubqe aligns it to executable_prefix automatically.
+
 # Set dry_run=False to submit for real
 result = runner.run(deck, workdir="runs/remote-si", submit_config=submit_cfg, dry_run=True)
 print(result.stdout)
-# submit -n 16 -w 02:00:00 --manager espresso-6.8_mpi-cleanup_pw --runName si-scf \
+# submit -n 16 -w 02:00:00 --manager espresso-7.1_mpi-cleanup_pw --runName si-scf \
 #   -i pseudo/Si.UPF -i qe.in espresso-7.1_pw -i qe.in
 ```
 
@@ -154,7 +157,7 @@ runner = QERunner(default_backend="submit")
 submit_cfg = SubmitConfig(
     nodes=4,
     walltime="00:30:00",
-    manager="espresso-6.8_mpi-cleanup_pw",
+    manager="espresso-7.1_mpi-cleanup_pw",
     run_name="si-reference-remote",
     executable_prefix="espresso-7.1",
 )
