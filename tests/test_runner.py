@@ -155,6 +155,47 @@ def _write_fake_submit_rc1_status_visible(script_path: Path) -> None:
     script_path.chmod(0o755)
 
 
+def _write_fake_submit_status_unknown(script_path: Path) -> None:
+    script_path.write_text(
+        (
+            "#!/usr/bin/env python3\n"
+            "import pathlib\n"
+            "import sys\n"
+            "\n"
+            "args = sys.argv[1:]\n"
+            "workdir = pathlib.Path.cwd()\n"
+            "if '--status' in args or (args and args[0] == 'status'):\n"
+            "    print('status: ???')\n"
+            "    raise SystemExit(0)\n"
+            "counter = workdir / 'submit_attempts_unknown.txt'\n"
+            "attempts = int(counter.read_text(encoding='utf-8')) if counter.exists() else 0\n"
+            "counter.write_text(str(attempts + 1), encoding='utf-8')\n"
+            "raise SystemExit(1)\n"
+        ),
+        encoding="utf-8",
+    )
+    script_path.chmod(0o755)
+
+
+def _write_fake_submit_out_of_service(script_path: Path) -> None:
+    script_path.write_text(
+        (
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "\n"
+            "args = sys.argv[1:]\n"
+            "if '--status' in args or (args and args[0] == 'status'):\n"
+            "    print('status: submitted')\n"
+            "    raise SystemExit(0)\n"
+            "print('All specified venues are out of service.')\n"
+            "print('Please select another venue or attempt execution at a later time.')\n"
+            "raise SystemExit(8)\n"
+        ),
+        encoding="utf-8",
+    )
+    script_path.chmod(0o755)
+
+
 def test_build_submit_command_includes_common_flags() -> None:
     runner = QERunner()
     submit_cfg = SubmitConfig(
@@ -338,6 +379,30 @@ def test_submit_rc1_with_status_visibility_is_treated_as_success(tmp_path) -> No
     assert (tmp_path / "submit_attempts.txt").read_text(encoding="utf-8").strip() == "1"
 
 
+def test_submit_status_classifies_state_q_as_running() -> None:
+    assert QERunner._classify_submit_status("state=Q") == "running"
+
+
+def test_submit_out_of_service_is_reported_as_error(tmp_path: Path) -> None:
+    submit_script = tmp_path / "submit"
+    _write_fake_submit_out_of_service(submit_script)
+    pseudo_dir = tmp_path / "pseudo"
+    pseudo_dir.mkdir(parents=True, exist_ok=True)
+    (pseudo_dir / "Si.UPF").write_text("pseudo\n", encoding="utf-8")
+
+    runner = QERunner(default_backend="submit", submit_executable=str(submit_script))
+    result = runner.run(
+        silicon_scf(pseudo_file="Si.UPF", pseudo_dir="./pseudo"),
+        workdir=tmp_path,
+        submit_config=SubmitConfig(run_name="sioos"),
+        dry_run=False,
+    )
+
+    assert result.returncode == 8
+    assert result.remote_status is None
+    assert "out of service" in result.stderr.lower()
+
+
 def test_run_step_records_expected_and_discovered_outputs(tmp_path) -> None:
     runner = QERunner(default_backend="local")
     step = QEStep(
@@ -384,7 +449,10 @@ def test_run_workflow_submit_waits_and_syncs_outputs(tmp_path: Path) -> None:
     results = runner.run_workflow_submit(
         workflow,
         workdir=tmp_path,
-        submit_config=SubmitConfig(run_name="si-remote"),
+        submit_config=SubmitConfig(
+            run_name="si-remote",
+            download_command_template=f"{submit_script} --download --runName {{run_name}}",
+        ),
         wait=True,
         sync_outputs=True,
         poll_interval=0.01,
@@ -419,7 +487,31 @@ def test_run_workflow_submit_verbose_logs_commands(tmp_path: Path, capsys) -> No
     captured = capsys.readouterr()
     assert "[nanohubqe] command:" in captured.out
     assert "[nanohubqe] status command:" in captured.out
-    assert "[nanohubqe] download command:" in captured.out
+    assert "no download command candidates configured" in captured.out
+
+
+def test_run_workflow_submit_stops_on_unknown_status_when_strict(tmp_path: Path) -> None:
+    submit_script = tmp_path / "submit"
+    _write_fake_submit_status_unknown(submit_script)
+
+    workflow = silicon_bands_workflow()
+    _touch_workflow_pseudos(workflow, tmp_path)
+    runner = QERunner(default_backend="submit", submit_executable=str(submit_script))
+
+    results = runner.run_workflow_submit(
+        workflow,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(run_name="si-remote"),
+        wait=True,
+        sync_outputs=True,
+        poll_interval=0.01,
+        wait_timeout=1.0,
+    )
+
+    assert set(results) == {"scf"}
+    assert results["scf"].returncode == 1
+    assert "Remote status for step 'scf' is unknown" in results["scf"].stderr
+    assert (tmp_path / "submit_attempts_unknown.txt").read_text(encoding="utf-8").strip() == "1"
 
 
 def test_run_workflow_submit_fails_when_expected_outputs_are_missing(tmp_path: Path) -> None:

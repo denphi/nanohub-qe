@@ -13,6 +13,7 @@ Built-in Templates
 - ``silicon_eos_workflow``
 - ``aluminum_dos_pdos_workflow``
 - ``silicon_phonon_dispersion_workflow``
+- ``gaas_opticdft_epsilon_workflow``
 
 Configurable UI-like Workflow
 -----------------------------
@@ -74,4 +75,37 @@ wait for completion, and sync outputs for plotting.
        verbose=True,
        wait=True,
        sync_outputs=True,
+   )
+
+OpticDFT Staged Submit Workflow
+-------------------------------
+
+``gaas_opticdft_epsilon_workflow`` captures the two-stage submit pattern:
+``OPTICDFTFileAction=CREATESTORE:SAVE`` for SCF, then
+``OPTICDFTFileAction=FETCH:DESTROY`` for epsilon.
+
+.. code-block:: python
+
+   from nanohubqe import QERunner, SubmitConfig, gaas_opticdft_epsilon_workflow
+
+   sim = gaas_opticdft_epsilon_workflow(
+       ga_pseudo_file="Ga.upf",
+       as_pseudo_file="As.upf",
+   )
+
+   runner = QERunner(default_backend="submit", verbose=True)
+   submit_cfg = SubmitConfig(
+       nodes=64,
+       walltime="480",
+       manager="opticdft-espresso-7.1_mpi",
+       executable_prefix="espresso-7.1",
+       extra_args=["--noquota"],
+   )
+
+   sim.run_submit(
+       workdir="runs/gaas-optical",
+       runner=runner,
+       submit_config=submit_cfg,
+       wait=True,
+       sync_outputs=False,
    )

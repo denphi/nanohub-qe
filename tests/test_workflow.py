@@ -4,6 +4,7 @@ from nanohubqe import (
     QERunner,
     aluminum_dos_pdos_workflow,
     bulk_electronic_phonon_workflow,
+    gaas_opticdft_epsilon_workflow,
     silicon_bands_dos_reference_workflow,
     silicon_bands_workflow,
     silicon_eos_workflow,
@@ -126,3 +127,18 @@ def test_bulk_configurable_workflow_uses_valid_dos_and_bands_namelists(tmp_path)
 
     bands_pw_text = results["bands_pw"].input_file.read_text(encoding="utf-8")
     assert "occupations = 'fixed'" in bands_pw_text
+
+
+def test_gaas_opticdft_workflow_runs_scf_then_optical(tmp_path) -> None:
+    workflow = gaas_opticdft_epsilon_workflow()
+    runner = QERunner(default_backend="local")
+
+    results = runner.run_workflow(workflow, workdir=tmp_path, dry_run=True)
+
+    assert set(results) == {"scf", "optical"}
+    assert "pw.x -in scf.in" in results["scf"].stdout
+    assert "epsilon.x -pd .true. -in optical.in" in results["optical"].stdout
+
+    optical_text = results["optical"].input_file.read_text(encoding="utf-8")
+    assert "&inputpp" in optical_text
+    assert "calculation = 'eps'" in optical_text

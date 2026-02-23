@@ -189,7 +189,10 @@ def test_run_submit_supports_plotting_after_wait_and_sync(tmp_path: Path) -> Non
     sim.run_submit(
         workdir=tmp_path,
         runner=runner,
-        submit_config=SubmitConfig(run_name="si-remote"),
+        submit_config=SubmitConfig(
+            run_name="si-remote",
+            download_command_template=f"{submit_script} --download --runName {{run_name}}",
+        ),
         wait=True,
         sync_outputs=True,
         poll_interval=0.01,

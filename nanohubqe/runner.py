@@ -102,6 +102,13 @@ class QERunner:
         if enabled:
             print(message, flush=True)
 
+    @staticmethod
+    def _debug_snippet(text: str, max_chars: int = 500) -> str:
+        cleaned = " ".join(text.split())
+        if len(cleaned) <= max_chars:
+            return cleaned
+        return cleaned[: max_chars - 3] + "..."
+
     def build_pw_command(self, input_filename: str) -> list[str]:
         return [*self.mpi_prefix, self.pw_executable, "-in", input_filename]
 
@@ -360,6 +367,21 @@ class QERunner:
         return has_registered and has_release
 
     @staticmethod
+    def _is_submit_fatal_error(process: subprocess.CompletedProcess[str]) -> bool:
+        """Detect submit failures that should not be treated as accepted."""
+
+        text = ((process.stdout or "") + "\n" + (process.stderr or "")).lower()
+        fatal_markers = (
+            "all specified venues are out of service",
+            "please select another venue or attempt execution at a later time",
+            "command line argument parsing failed",
+            "runname contains non-alphanumeric characters",
+            "invalid manager",
+            "unknown manager",
+        )
+        return any(marker in text for marker in fatal_markers)
+
+    @staticmethod
     def _render_submit_template(
         template: str,
         *,
@@ -415,21 +437,23 @@ class QERunner:
                     workdir=workdir,
                 )
             ]
-
-        return [
-            [self.submit_executable, "--download", "--runName", run_name],
-            [self.submit_executable, "--download", run_name],
-            [self.submit_executable, "download", run_name],
-            [self.submit_executable, "--results", "--runName", run_name],
-            [self.submit_executable, "--results", run_name],
-            [self.submit_executable, "results", run_name],
-            [self.submit_executable, "--fetch", "--runName", run_name],
-            [self.submit_executable, "--get", "--runName", run_name],
-        ]
+        # The default nanoHUB submit help does not advertise download/results/fetch
+        # commands. Only run an explicit download template when provided.
+        return []
 
     @staticmethod
     def _classify_submit_status(output_text: str) -> str:
         text = output_text.lower()
+        state_match = re.search(r"\bstate\s*[:=]\s*([a-z])\b", text)
+        if state_match:
+            state_code = state_match.group(1)
+            if state_code in {"q", "r", "w", "h", "p", "s"}:
+                return "running"
+            if state_code in {"c", "d"}:
+                return "completed"
+            if state_code in {"f", "e", "k", "x"}:
+                return "failed"
+
         failed_markers = (
             "failed",
             "error",
@@ -509,6 +533,11 @@ class QERunner:
                 verbose_enabled,
                 f"[nanohubqe] status rc={process.returncode}",
             )
+            if combined.strip():
+                self._verbose_print(
+                    verbose_enabled,
+                    f"[nanohubqe] status out: {self._debug_snippet(combined)}",
+                )
             if process.returncode != 0:
                 errors.append(
                     f"{shlex.join(command)} -> rc={process.returncode}: {combined.strip()}"
@@ -591,6 +620,12 @@ class QERunner:
             workdir=base_dir,
             submit_config=submit_config,
         )
+        if not candidates:
+            self._verbose_print(
+                verbose_enabled,
+                "[nanohubqe] no download command candidates configured; skipping submit download phase",
+            )
+            return False
         for command in candidates:
             self._verbose_print(
                 verbose_enabled,
@@ -612,6 +647,12 @@ class QERunner:
                 verbose_enabled,
                 f"[nanohubqe] download rc={process.returncode}",
             )
+            combined = self._combine_process_output(process)
+            if combined.strip():
+                self._verbose_print(
+                    verbose_enabled,
+                    f"[nanohubqe] download out: {self._debug_snippet(combined)}",
+                )
             if process.returncode == 0:
                 return True
         return False
@@ -962,12 +1003,19 @@ class QERunner:
 
         retry_notes: list[str] = []
         submit_remote_status: str | None = None
+        submit_fatal_error = submitted and self._is_submit_fatal_error(process)
+        if submit_fatal_error:
+            self._verbose_print(
+                verbose_enabled,
+                "[nanohubqe] fatal submit error detected; skipping submit-acceptance probes",
+            )
         submit_accepted = submitted and self._is_submit_submission_accepted(process)
         if submit_accepted:
             submit_remote_status = "submitted"
         if (
             submitted
             and not submit_accepted
+            and not submit_fatal_error
             and process.returncode != 0
             and effective_submit_config is not None
             and effective_submit_config.accept_nonzero_submit_if_status_visible
@@ -1015,6 +1063,7 @@ class QERunner:
             and process.returncode != 0
             and effective_submit_config is not None
             and not submit_accepted
+            and not submit_fatal_error
         ):
             def summarize_attempt(cmd: list[str], proc: subprocess.CompletedProcess[str]) -> str:
                 combined = self._combine_process_output(proc).strip()
@@ -1098,6 +1147,16 @@ class QERunner:
                 )
                 retry_notes.append(summarize_attempt(retry_command, retry_process))
 
+                if self._is_submit_fatal_error(retry_process):
+                    process = retry_process
+                    command = retry_command
+                    submit_fatal_error = True
+                    self._verbose_print(
+                        verbose_enabled,
+                        "[nanohubqe] fatal submit error detected during retry; aborting retries",
+                    )
+                    break
+
                 retry_accepted = self._is_submit_submission_accepted(retry_process)
                 if retry_process.returncode == 0 or retry_accepted:
                     process = retry_process
@@ -1116,6 +1175,7 @@ class QERunner:
         if (
             submitted
             and not submit_accepted
+            and not submit_fatal_error
             and effective_submit_config is not None
             and effective_submit_config.accept_nonzero_submit_if_status_visible
             and effective_submit_config.run_name
@@ -1309,6 +1369,15 @@ class QERunner:
             results[step_name] = result
             if result.returncode != 0:
                 result.remote_status = "submit_failed"
+                self._verbose_print(
+                    verbose_enabled,
+                    f"[nanohubqe] step '{step_name}' failed rc={result.returncode}",
+                )
+                if result.stderr:
+                    self._verbose_print(
+                        verbose_enabled,
+                        f"[nanohubqe] step '{step_name}' error: {self._debug_snippet(result.stderr)}",
+                    )
                 break
 
             if dry_run:
@@ -1342,6 +1411,24 @@ class QERunner:
                 except Exception as exc:
                     result.returncode = 1
                     error_text = str(exc)
+                    if result.stderr:
+                        result.stderr = result.stderr + "\n" + error_text
+                    else:
+                        result.stderr = error_text
+                    break
+
+                if (
+                    wait
+                    and step_submit_config.require_expected_outputs
+                    and result.remote_status in {None, "unknown"}
+                ):
+                    result.returncode = 1
+                    error_text = (
+                        f"Remote status for step '{step_name}' is unknown; cannot safely continue "
+                        "workflow dependencies. Configure SubmitConfig.status_command_template "
+                        "to a command that reports a parseable state, or set "
+                        "SubmitConfig.require_expected_outputs=False to proceed."
+                    )
                     if result.stderr:
                         result.stderr = result.stderr + "\n" + error_text
                     else:

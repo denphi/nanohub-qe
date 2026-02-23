@@ -711,6 +711,105 @@ def silicon_bands_dos_reference_workflow(
     )
 
 
+def gaas_opticdft_epsilon_workflow(
+    *,
+    a: float = 5.653,
+    ecutwfc: float = 50.0,
+    ecutrho: float | None = None,
+    scf_k_points: tuple[int, int, int, int, int, int] = (6, 6, 6, 0, 0, 0),
+    ga_pseudo_file: str = "Ga.upf",
+    as_pseudo_file: str = "As.upf",
+    prefix: str = "gaas",
+    pseudo_dir: str = "./pseudo",
+    outdir: str = "./tmp",
+    conv_thr: float = 1.0e-8,
+    epsilon_wmin: float = 0.0,
+    epsilon_wmax: float = 20.0,
+    epsilon_nw: int = 400,
+    epsilon_intersmear: float = 0.10,
+    qe_disable_gga_pbe: int = 0,
+    include_pd_flag: bool = True,
+    wavefile_location_file: str = "OPTICDFT.wavefilelocation",
+) -> QEWorkflow:
+    """GaAs SCF -> epsilon.x workflow mirroring OpticDFT submit staging."""
+
+    if ecutrho is None:
+        ecutrho = 8.0 * ecutwfc
+
+    control = _default_control(
+        calculation="scf",
+        prefix=prefix,
+        pseudo_dir=pseudo_dir,
+        outdir=outdir,
+    )
+    system = {
+        "ibrav": 2,
+        "celldm(1)": a * _BOHR_PER_ANGSTROM,
+        "ecutwfc": ecutwfc,
+        "ecutrho": ecutrho,
+        "occupations": "fixed",
+    }
+    electrons = {"conv_thr": conv_thr}
+    scf_deck = PWInputDeck(
+        control=control,
+        system=system,
+        electrons=electrons,
+        atomic_species=[
+            Species("Ga", 69.723, ga_pseudo_file),
+            Species("As", 74.921595, as_pseudo_file),
+        ],
+        atomic_positions=[Atom("Ga", (0.0, 0.0, 0.0)), Atom("As", (0.25, 0.25, 0.25))],
+        atomic_positions_mode="crystal",
+        k_points_mode="automatic",
+        k_points=scf_k_points,
+    )
+
+    epsilon_input = f"""
+&inputpp
+  prefix = '{prefix}',
+  outdir = '{outdir}',
+  calculation = 'eps',
+/
+&energy_grid
+  wmin = {epsilon_wmin},
+  wmax = {epsilon_wmax},
+  nw = {epsilon_nw},
+  intersmear = {epsilon_intersmear},
+/
+"""
+    shared_env = {"QE_DISABLE_GGA_PBE": str(int(qe_disable_gga_pbe))}
+    optical_args = ["-pd", ".true."] if include_pd_flag else []
+
+    steps: dict[str, QEStep | PWInputDeck] = {
+        "scf": QEStep(
+            executable="pw.x",
+            deck=scf_deck,
+            submit_input_files=[ga_pseudo_file, as_pseudo_file],
+            env={**shared_env, "OPTICDFTFileAction": "CREATESTORE:SAVE"},
+            notes="Create/store wavefunction artifacts for downstream optical stage.",
+        ),
+        "optical": QEStep(
+            executable="epsilon.x",
+            input_text=epsilon_input,
+            args=optical_args,
+            submit_input_files=[wavefile_location_file],
+            env={**shared_env, "OPTICDFTFileAction": "FETCH:DESTROY"},
+            notes="Fetch/consume stored wavefunction location from OpticDFT staging.",
+        ),
+    }
+
+    return QEWorkflow(
+        name="gaas_opticdft_epsilon",
+        steps=steps,
+        order=["scf", "optical"],
+        notes=(
+            "OpticDFT remote pattern: SCF with CREATESTORE:SAVE, then epsilon.x "
+            "with FETCH:DESTROY and OPTICDFT.wavefilelocation."
+        ),
+        metadata={"material": "GaAs", "workflow_type": "opticdft_epsilon"},
+    )
+
+
 def bulk_electronic_phonon_workflow(
     *,
     symbol: str = "Si",
@@ -961,6 +1060,9 @@ def available_templates() -> dict[str, str]:
         "silicon_phonon_dispersion_workflow": "Silicon SCF->PH->Q2R->MATDYN phonon workflow.",
         "silicon_bands_dos_reference_workflow": (
             "nanoHUB-style Si SCF+DOS+bands reference workflow."
+        ),
+        "gaas_opticdft_epsilon_workflow": (
+            "GaAs OpticDFT SCF->epsilon workflow with CREATESTORE/FETCH submit env staging."
         ),
         "bulk_electronic_phonon_workflow": (
             "UI-like configurable bulk workflow (structure + DOS/bands/phonons toggles)."

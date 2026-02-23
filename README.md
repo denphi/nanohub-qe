@@ -68,6 +68,7 @@ print("Loaded:", loaded)
 - `silicon_eos_workflow`: lattice sweep for equation-of-state fitting
 - `aluminum_dos_pdos_workflow`: SCF + NSCF + `dos.x` + `projwfc.x`
 - `silicon_phonon_dispersion_workflow`: SCF + `ph.x` + `q2r.x` + `matdyn.x`
+- `gaas_opticdft_epsilon_workflow`: OpticDFT-style GaAs SCF + optical epsilon flow
 
 ```python
 from nanohubqe import available_templates
@@ -179,6 +180,37 @@ sim.plot_dos(backend="plotly")
 # submit_cfg.require_expected_outputs = False
 
 # Note: run_name is sanitized to alphanumeric characters for submit compatibility.
+```
+
+OpticDFT staged submit pattern (CREATESTORE -> FETCH):
+
+```python
+from nanohubqe import QERunner, SubmitConfig, gaas_opticdft_epsilon_workflow
+
+sim = gaas_opticdft_epsilon_workflow(
+    ga_pseudo_file="Ga.upf",
+    as_pseudo_file="As.upf",
+)
+runner = QERunner(default_backend="submit", verbose=True)
+submit_cfg = SubmitConfig(
+    nodes=64,
+    walltime="480",
+    manager="opticdft-espresso-7.1_mpi",
+    executable_prefix="espresso-7.1",
+    extra_args=["--noquota"],
+    # set only if your submit deployment needs it
+    venue=None,
+)
+
+sim.run_submit(
+    workdir="runs/gaas-optical",
+    runner=runner,
+    submit_config=submit_cfg,
+    wait=True,
+    sync_outputs=False,  # set download_command_template if your submit supports result fetch
+    dry_run=False,
+    verbose=True,
+)
 ```
 
 ## Multi-step Workflow Example
