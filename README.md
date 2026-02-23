@@ -145,6 +145,12 @@ submit_cfg = SubmitConfig(
 
 # If manager is omitted (or uses a different espresso version),
 # nanohubqe aligns it to executable_prefix automatically.
+#
+# If manager is set, multi-step submit workflows auto-apply manager staging:
+# first step  -> OPTICDFTFileAction=CREATESTORE:SAVE
+# middle step -> OPTICDFTFileAction=FETCH:SAVE
+# last step   -> OPTICDFTFileAction=FETCH:DESTROY
+# Disable with: SubmitConfig(apply_manager_file_actions=False)
 
 # Set dry_run=False to submit for real
 result = runner.run(deck, workdir="runs/remote-si", submit_config=submit_cfg, dry_run=True)
@@ -189,6 +195,9 @@ sim.plot_dos(backend="plotly")
 
 # To allow completion even when expected output files are missing locally:
 # submit_cfg.require_expected_outputs = False
+#
+# To disable automatic manager file-action staging:
+# submit_cfg.apply_manager_file_actions = False
 
 # Note: run_name is sanitized to alphanumeric characters for submit compatibility.
 ```

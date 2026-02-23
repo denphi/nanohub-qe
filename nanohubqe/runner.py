@@ -56,6 +56,13 @@ class SubmitConfig:
     accept_nonzero_submit_if_status_visible: bool = True
     # If True, sanitize run names to [A-Za-z0-9] for submit compatibility.
     sanitize_run_name: bool = True
+    # Automatically apply manager file-action chaining across workflow steps.
+    # None => auto-enable when manager is set.
+    apply_manager_file_actions: bool | None = None
+    # Environment variable used for manager file-action choreography.
+    manager_file_action_env: str = "OPTICDFTFileAction"
+    # Locator file passed to FETCH stages when available (manager-specific).
+    manager_file_action_locator: str | None = "OPTICDFT.wavefilelocation"
 
 
 @dataclass
@@ -267,7 +274,20 @@ class QERunner:
             align_manager_with_executable_prefix=config.align_manager_with_executable_prefix,
             accept_nonzero_submit_if_status_visible=config.accept_nonzero_submit_if_status_visible,
             sanitize_run_name=config.sanitize_run_name,
+            apply_manager_file_actions=config.apply_manager_file_actions,
+            manager_file_action_env=config.manager_file_action_env,
+            manager_file_action_locator=config.manager_file_action_locator,
         )
+
+    @staticmethod
+    def _series_file_action(step_index: int, total_steps: int) -> str:
+        if total_steps <= 1:
+            return "CREATESTORE:DESTROY"
+        if step_index == 0:
+            return "CREATESTORE:SAVE"
+        if step_index == (total_steps - 1):
+            return "FETCH:DESTROY"
+        return "FETCH:SAVE"
 
     @staticmethod
     def _espresso_version_token(value: str | None) -> str | None:
@@ -748,6 +768,42 @@ class QERunner:
             return
         shutil.copy2(source, target)
 
+    @staticmethod
+    def _copy_tree(source: Path, target: Path) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.resolve() == target.resolve():
+            return
+        if target.exists():
+            shutil.copytree(source, target, dirs_exist_ok=True)
+            return
+        shutil.copytree(source, target)
+
+    @staticmethod
+    def _step_save_dir(workdir: Path, step: QEStep) -> Path | None:
+        if step.deck is None:
+            return None
+        prefix_raw = step.deck.control.get("prefix")
+        if prefix_raw is None:
+            return None
+        prefix = str(prefix_raw).strip()
+        if not prefix:
+            return None
+        outdir_raw = str(step.deck.control.get("outdir", "./tmp"))
+        outdir = Path(outdir_raw)
+        if not outdir.is_absolute():
+            outdir = workdir / outdir
+        return outdir / f"{prefix}.save"
+
+    @staticmethod
+    def _submit_input_path(workdir: Path, path: Path) -> str:
+        candidate = path
+        if path.is_absolute():
+            try:
+                candidate = path.relative_to(workdir)
+            except ValueError:
+                return path.as_posix()
+        return candidate.as_posix()
+
     def _sync_expected_outputs_from_results_store(
         self,
         *,
@@ -814,6 +870,32 @@ class QERunner:
                     target = workdir / candidate.name
                     self._copy_file(candidate, target)
                     copied_any = True
+
+        if step.deck is not None:
+            prefix_raw = step.deck.control.get("prefix")
+            if prefix_raw is not None and str(prefix_raw).strip():
+                prefix = str(prefix_raw).strip()
+                outdir_raw = str(step.deck.control.get("outdir", "./tmp"))
+                outdir_rel = Path(outdir_raw)
+                if outdir_rel.is_absolute():
+                    outdir_rel = Path(outdir_rel.name)
+                expected_rel = outdir_rel / f"{prefix}.save"
+                target_dir = workdir / expected_rel
+                if not target_dir.exists():
+                    for location in locations:
+                        if not location.is_dir():
+                            continue
+                        candidates: list[Path] = []
+                        direct = location / expected_rel
+                        if direct.is_dir():
+                            candidates.append(direct)
+                        if not candidates:
+                            matches = list(location.glob(f"**/{prefix}.save"))
+                            candidates = [match for match in matches if match.is_dir()]
+                        if candidates:
+                            self._copy_tree(candidates[0], target_dir)
+                            copied_any = True
+                            break
 
         return copied_any
 
@@ -1434,10 +1516,26 @@ class QERunner:
                 overwrite=pseudo_overwrite,
             )
 
+        if submit_config is None:
+            apply_manager_file_actions = False
+            manager_file_action_env = "OPTICDFTFileAction"
+            manager_file_action_locator = "OPTICDFT.wavefilelocation"
+        else:
+            if submit_config.apply_manager_file_actions is None:
+                apply_manager_file_actions = bool(submit_config.manager)
+            else:
+                apply_manager_file_actions = bool(submit_config.apply_manager_file_actions)
+            manager_file_action_env = submit_config.manager_file_action_env
+            manager_file_action_locator = submit_config.manager_file_action_locator
+
+        total_steps = len(workflow.order)
+        shared_submit_inputs: list[str] = []
         results: dict[str, ExecutionResult] = {}
-        for step_name, step in workflow.iter_steps(
+        for step_index, (step_name, step) in enumerate(
+            workflow.iter_steps(
             input_suffix=input_suffix,
             output_suffix=output_suffix,
+            )
         ):
             self._verbose_print(
                 verbose_enabled,
@@ -1449,6 +1547,38 @@ class QERunner:
                 step_name=step_name,
                 assign_step_run_names=assign_step_run_names,
             )
+            for item in shared_submit_inputs:
+                if item not in step_submit_config.input_files:
+                    step_submit_config.input_files.append(item)
+
+            if (
+                apply_manager_file_actions
+                and manager_file_action_env
+                and manager_file_action_env not in step_submit_config.env
+                and manager_file_action_env not in step.env
+            ):
+                file_action = self._series_file_action(
+                    step_index,
+                    total_steps,
+                )
+                step_submit_config.env[manager_file_action_env] = file_action
+
+                if file_action.startswith("FETCH") and manager_file_action_locator:
+                    locator_path = Path(manager_file_action_locator)
+                    if not locator_path.is_absolute():
+                        locator_path = base_dir / locator_path
+                    if locator_path.exists():
+                        locator_item = self._submit_input_path(base_dir, locator_path)
+                        if locator_item not in step_submit_config.input_files:
+                            step_submit_config.input_files.append(locator_item)
+                    else:
+                        self._verbose_print(
+                            verbose_enabled,
+                            (
+                                "[nanohubqe] manager FETCH action requested but locator "
+                                f"file not found: {manager_file_action_locator}"
+                            ),
+                        )
 
             result = self.run_step(
                 step,
@@ -1475,6 +1605,16 @@ class QERunner:
                         f"[nanohubqe] step '{step_name}' error: {self._debug_snippet(result.stderr)}",
                     )
                 break
+
+            step_save_dir = self._step_save_dir(base_dir, step)
+            if step_save_dir is not None and step_save_dir.exists():
+                save_input = self._submit_input_path(base_dir, step_save_dir)
+                if save_input not in shared_submit_inputs:
+                    shared_submit_inputs.append(save_input)
+                    self._verbose_print(
+                        verbose_enabled,
+                        f"[nanohubqe] staging shared submit input for next steps: {save_input}",
+                    )
 
             if dry_run:
                 continue

@@ -66,6 +66,11 @@ wait for completion, and sync outputs for plotting.
    )
 
    # If manager is omitted (or version-mismatched), it is aligned to executable_prefix.
+   # If manager is set, step env defaults to:
+   #   first  -> OPTICDFTFileAction=CREATESTORE:SAVE
+   #   middle -> OPTICDFTFileAction=FETCH:SAVE
+   #   last   -> OPTICDFTFileAction=FETCH:DESTROY
+   # Disable with: submit_cfg.apply_manager_file_actions = False
 
    sim.run_submit(
        workdir="runs/si-remote",

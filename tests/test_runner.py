@@ -695,3 +695,96 @@ def test_run_workflow_submit_fails_when_expected_outputs_are_missing(tmp_path: P
     assert "dos" in results
     assert not results["dos"].ok
     assert "Expected output files not available" in results["dos"].stderr
+
+
+def test_run_workflow_submit_stages_existing_save_dir_between_steps(tmp_path: Path) -> None:
+    from nanohubqe import silicon_bands_dos_reference_workflow
+
+    workflow = silicon_bands_dos_reference_workflow(include_plotband=False)
+    _touch_workflow_pseudos(workflow, tmp_path)
+
+    save_dir = tmp_path / "tmp" / "qe.save"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    (save_dir / "data-file-schema.xml").write_text("<xml/>", encoding="utf-8")
+
+    runner = QERunner(default_backend="submit")
+    results = runner.run_workflow_submit(
+        workflow,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(run_name="si-remote"),
+        dry_run=True,
+        wait=False,
+        sync_outputs=False,
+    )
+
+    assert "-i tmp/qe.save" in results["dos"].stdout
+    assert "-i tmp/qe.save" in results["bands_pw"].stdout
+    assert "-i tmp/qe.save" in results["bands_pp"].stdout
+
+
+def test_run_workflow_submit_auto_applies_manager_file_actions(tmp_path: Path) -> None:
+    workflow = silicon_bands_workflow()
+    _touch_workflow_pseudos(workflow, tmp_path)
+
+    runner = QERunner(default_backend="submit")
+    results = runner.run_workflow_submit(
+        workflow,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(
+            manager="espresso-7.1_mpi",
+            run_name="si-remote",
+        ),
+        dry_run=True,
+        wait=False,
+        sync_outputs=False,
+    )
+
+    assert "--env OPTICDFTFileAction=CREATESTORE:SAVE" in results["scf"].stdout
+    assert "--env OPTICDFTFileAction=FETCH:DESTROY" in results["bands"].stdout
+
+
+def test_run_workflow_submit_keeps_explicit_step_file_action_env(tmp_path: Path) -> None:
+    from nanohubqe import gaas_opticdft_epsilon_workflow
+
+    workflow = gaas_opticdft_epsilon_workflow()
+    _touch_workflow_pseudos(workflow, tmp_path)
+
+    runner = QERunner(default_backend="submit")
+    results = runner.run_workflow_submit(
+        workflow,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(
+            manager="opticdft-espresso-7.1_mpi",
+            run_name="gaas-optic",
+            apply_manager_file_actions=True,
+        ),
+        dry_run=True,
+        wait=False,
+        sync_outputs=False,
+    )
+
+    assert "--env OPTICDFTFileAction=CREATESTORE:SAVE" in results["scf"].stdout
+    assert "--env OPTICDFTFileAction=FETCH:DESTROY" in results["optical"].stdout
+
+
+def test_run_workflow_submit_fetch_stage_adds_locator_when_present(tmp_path: Path) -> None:
+    workflow = silicon_bands_workflow()
+    _touch_workflow_pseudos(workflow, tmp_path)
+    (tmp_path / "OPTICDFT.wavefilelocation").write_text("loc\n", encoding="utf-8")
+
+    runner = QERunner(default_backend="submit")
+    results = runner.run_workflow_submit(
+        workflow,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(
+            manager="opticdft-espresso-7.1_mpi",
+            run_name="si-remote",
+            apply_manager_file_actions=True,
+        ),
+        dry_run=True,
+        wait=False,
+        sync_outputs=False,
+    )
+
+    assert "--env OPTICDFTFileAction=FETCH:DESTROY" in results["bands"].stdout
+    assert "-i OPTICDFT.wavefilelocation" in results["bands"].stdout
