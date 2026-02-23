@@ -53,6 +53,8 @@ class SubmitConfig:
     align_manager_with_executable_prefix: bool = True
     # If submit returns non-zero, try status probing and accept if the run is visible.
     accept_nonzero_submit_if_status_visible: bool = True
+    # If True, sanitize run names to [A-Za-z0-9_] for submit compatibility.
+    sanitize_run_name: bool = True
 
 
 @dataclass
@@ -97,7 +99,7 @@ class QERunner:
     @staticmethod
     def _verbose_print(enabled: bool, message: str) -> None:
         if enabled:
-            print(message)
+            print(message, flush=True)
 
     def build_pw_command(self, input_filename: str) -> list[str]:
         return [*self.mpi_prefix, self.pw_executable, "-in", input_filename]
@@ -256,6 +258,7 @@ class QERunner:
             require_expected_outputs=config.require_expected_outputs,
             align_manager_with_executable_prefix=config.align_manager_with_executable_prefix,
             accept_nonzero_submit_if_status_visible=config.accept_nonzero_submit_if_status_visible,
+            sanitize_run_name=config.sanitize_run_name,
         )
 
     @staticmethod
@@ -290,6 +293,14 @@ class QERunner:
         return config
 
     @staticmethod
+    def _sanitize_submit_run_name(run_name: str) -> str:
+        sanitized = re.sub(r"[^A-Za-z0-9_]", "_", run_name)
+        sanitized = re.sub(r"_+", "_", sanitized).strip("_")
+        if not sanitized:
+            return "run"
+        return sanitized
+
+    @staticmethod
     def _submit_pseudo_inputs(step: QEStep) -> list[str]:
         if step.deck is None:
             return []
@@ -321,7 +332,10 @@ class QERunner:
         if config.stage_input_file and input_filename and input_filename not in config.input_files:
             config.input_files.append(input_filename)
         config.env.update(step.env)
-        return self._normalize_submit_manager(config)
+        config = self._normalize_submit_manager(config)
+        if config.sanitize_run_name and config.run_name:
+            config.run_name = self._sanitize_submit_run_name(config.run_name)
+        return config
 
     @staticmethod
     def _parse_submit_job_id(text: str) -> str | None:
@@ -1190,9 +1204,9 @@ class QERunner:
 
         if assign_step_run_names:
             base_name = cfg.run_name or workflow_name
-            cfg.run_name = f"{base_name}-{step_name}"
+            cfg.run_name = f"{base_name}_{step_name}"
         elif cfg.run_name is None:
-            cfg.run_name = f"{workflow_name}-{step_name}"
+            cfg.run_name = f"{workflow_name}_{step_name}"
         return cfg
 
     def run_workflow_submit(

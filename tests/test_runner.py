@@ -44,14 +44,15 @@ def _write_fake_submit(script_path: Path) -> None:
             "\n"
             "if '--download' in args or (args and args[0] == 'download'):\n"
             "    run_name = run_name_from_args(args)\n"
-            "    if run_name.endswith('-scf'):\n"
+            "    normalized = run_name.replace('_', '-')\n"
+            "    if normalized.endswith('-scf'):\n"
             "        (workdir / 'scf.out').write_text(\n"
             "            ' total energy = -10.0 Ry\\n total energy = -11.0 Ry\\n JOB DONE.\\n',\n"
             "            encoding='utf-8',\n"
             "        )\n"
-            "    if run_name.endswith('-dos'):\n"
+            "    if normalized.endswith('-dos'):\n"
             "        (workdir / 'qe.dos').write_text('0.0 1.0 1.0\\n1.0 2.0 3.0\\n', encoding='utf-8')\n"
-            "    if run_name.endswith('-bands_pp'):\n"
+            "    if normalized.endswith('-bands-pp') or run_name.endswith('bands_pp'):\n"
             "        (workdir / 'qe.bands.dat').write_text(\n"
             "            '&plot nbnd= 2, nks= 3 /\\n'\n"
             "            ' 0.500000 0.500000 0.500000\\n'\n"
@@ -96,7 +97,8 @@ def _write_fake_submit_without_dos(script_path: Path) -> None:
             "\n"
             "if '--download' in args or (args and args[0] == 'download'):\n"
             "    run_name = run_name_from_args(args)\n"
-            "    if run_name.endswith('-scf'):\n"
+            "    normalized = run_name.replace('_', '-')\n"
+            "    if normalized.endswith('-scf'):\n"
             "        (workdir / 'scf.out').write_text(\n"
             "            ' total energy = -10.0 Ry\\n total energy = -11.0 Ry\\n JOB DONE.\\n',\n"
             "            encoding='utf-8',\n"
@@ -155,7 +157,7 @@ def test_build_submit_command_includes_common_flags() -> None:
         n_cpus=8,
         wall_time="01:30:00",
         manager="espresso-7.1_mpi-cleanup_pw",
-        run_name="si-test",
+        run_name="si_test",
         input_files=["qe.in"],
         env={"ESPRESSO_TMPDIR": "./tmp"},
     )
@@ -240,7 +242,7 @@ def test_run_submit_matches_nanohub_style_pw_command(tmp_path) -> None:
             nodes=2,
             walltime="01:00:00",
             manager="espresso-6.8_mpi-cleanup_pw",
-            run_name="si-job",
+            run_name="si_job",
             executable_prefix="espresso-7.1",
         ),
         dry_run=True,
@@ -248,7 +250,7 @@ def test_run_submit_matches_nanohub_style_pw_command(tmp_path) -> None:
 
     assert (
         "submit -n 2 -w 01:00:00 --manager espresso-7.1_mpi-cleanup_pw "
-        "--runName si-job -i pseudo/Si.UPF -i qe.in espresso-7.1_pw -i qe.in"
+        "--runName si_job -i pseudo/Si.UPF -i qe.in espresso-7.1_pw -i qe.in"
     ) == result.stdout
 
 
@@ -262,13 +264,30 @@ def test_submit_manager_defaults_from_executable_prefix(tmp_path) -> None:
         submit_config=SubmitConfig(
             nodes=2,
             walltime="01:00:00",
-            run_name="si-job",
+            run_name="si_job",
             executable_prefix="espresso-7.1",
         ),
         dry_run=True,
     )
 
     assert "--manager espresso-7.1_mpi-cleanup_pw" in result.stdout
+
+
+def test_submit_run_name_is_sanitized_for_submit_compatibility(tmp_path) -> None:
+    runner = QERunner(default_backend="submit")
+    deck = silicon_scf(pseudo_file="Si.UPF", pseudo_dir="./pseudo")
+
+    result = runner.run(
+        deck,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(
+            run_name="si-reference-remote",
+            executable_prefix="espresso-7.1",
+        ),
+        dry_run=True,
+    )
+
+    assert "--runName si_reference_remote" in result.stdout
 
 
 def test_submit_rc1_registered_release_is_treated_as_success(tmp_path) -> None:
@@ -370,7 +389,7 @@ def test_run_workflow_submit_waits_and_syncs_outputs(tmp_path: Path) -> None:
     assert results["scf"].submitted
     assert results["scf"].remote_status == "completed"
     assert results["scf"].outputs_synced
-    assert results["scf"].remote_run_name == "si-remote-scf"
+    assert results["scf"].remote_run_name == "si_remote_scf"
 
 
 def test_run_workflow_submit_verbose_logs_commands(tmp_path: Path, capsys) -> None:
