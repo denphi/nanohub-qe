@@ -63,6 +63,9 @@ class SubmitConfig:
     manager_file_action_env: str = "OPTICDFTFileAction"
     # Locator file passed to FETCH stages when available (manager-specific).
     manager_file_action_locator: str | None = "OPTICDFT.wavefilelocation"
+    # Stage pseudopotentials in submit run root (e.g., "Si.UPF" instead of "pseudo/Si.UPF").
+    # This matches submit environments that flatten uploaded files into "./".
+    flatten_pseudo_inputs: bool = True
 
 
 @dataclass
@@ -277,6 +280,7 @@ class QERunner:
             apply_manager_file_actions=config.apply_manager_file_actions,
             manager_file_action_env=config.manager_file_action_env,
             manager_file_action_locator=config.manager_file_action_locator,
+            flatten_pseudo_inputs=config.flatten_pseudo_inputs,
         )
 
     @staticmethod
@@ -328,9 +332,12 @@ class QERunner:
         return sanitized
 
     @staticmethod
-    def _submit_pseudo_inputs(step: QEStep) -> list[str]:
+    def _submit_pseudo_inputs(step: QEStep, config: SubmitConfig) -> list[str]:
         if step.deck is None:
             return []
+
+        if config.flatten_pseudo_inputs:
+            return [Path(species.pseudo_file).name for species in step.deck.atomic_species]
 
         pseudo_dir_raw = str(step.deck.control.get("pseudo_dir", "./pseudo"))
         pseudo_dir = Path(pseudo_dir_raw)
@@ -353,7 +360,7 @@ class QERunner:
         for entry in step.submit_input_files:
             if entry not in config.input_files:
                 config.input_files.append(entry)
-        for entry in self._submit_pseudo_inputs(step):
+        for entry in self._submit_pseudo_inputs(step, config):
             entry_name = Path(entry).name
             basename_exists = any(Path(existing).name == entry_name for existing in config.input_files)
             if entry not in config.input_files and not basename_exists:
@@ -367,6 +374,44 @@ class QERunner:
         if config.sanitize_run_name and config.run_name:
             config.run_name = self._sanitize_submit_run_name(config.run_name)
         return config
+
+    @staticmethod
+    def _stage_submit_pseudo_inputs(
+        step: QEStep,
+        *,
+        workdir: Path,
+        submit_config: SubmitConfig,
+        verbose: bool,
+    ) -> None:
+        if step.deck is None or not submit_config.flatten_pseudo_inputs:
+            return
+
+        pseudo_dir_raw = str(step.deck.control.get("pseudo_dir", "./pseudo"))
+        pseudo_dir = Path(pseudo_dir_raw)
+
+        for species in step.deck.atomic_species:
+            source_rel = Path(species.pseudo_file)
+            if str(pseudo_dir) not in {"", "."} and not source_rel.is_absolute():
+                source_rel = pseudo_dir / source_rel
+
+            source = source_rel if source_rel.is_absolute() else (workdir / source_rel)
+            target = workdir / Path(species.pseudo_file).name
+
+            if not source.exists() and target.exists():
+                continue
+            if not source.exists():
+                continue
+            if source.resolve() == target.resolve():
+                continue
+
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+            if verbose:
+                print(
+                    "[nanohubqe] staged pseudo for submit root: "
+                    f"{source.as_posix()} -> {target.as_posix()}",
+                    flush=True,
+                )
 
     @staticmethod
     def _parse_submit_job_id(text: str) -> str | None:
@@ -1055,6 +1100,12 @@ class QERunner:
             submitted = True
 
             if not dry_run:
+                self._stage_submit_pseudo_inputs(
+                    resolved_step,
+                    workdir=workdir_path,
+                    submit_config=cfg,
+                    verbose=verbose_enabled,
+                )
                 missing_submit_inputs: list[str] = []
                 optional_inputs = set(resolved_step.submit_input_files) if resolved_step.allow_missing_submit_input_files else set()
                 for item in cfg.input_files:

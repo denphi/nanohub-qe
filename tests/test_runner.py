@@ -378,11 +378,32 @@ def test_run_submit_matches_nanohub_style_pw_command(tmp_path) -> None:
 
     assert (
         "submit -n 2 -w 01:00:00 --manager espresso-7.1_mpi-cleanup_pw "
-        "--runName sijob -i pseudo/Si.UPF -i qe.in espresso-7.1_pw -i qe.in"
+        "--runName sijob -i Si.UPF -i qe.in espresso-7.1_pw -i qe.in"
     ) == result.stdout
 
     text = result.input_file.read_text(encoding="utf-8")
     assert " pseudo_dir = './'," in text
+
+
+def test_submit_stages_flattened_pseudo_inputs_in_workdir_root(tmp_path: Path) -> None:
+    submit_script = tmp_path / "submit"
+    _write_fake_submit(submit_script)
+
+    pseudo_dir = tmp_path / "pseudo"
+    pseudo_dir.mkdir(parents=True, exist_ok=True)
+    (pseudo_dir / "Si.UPF").write_text("pseudo\n", encoding="utf-8")
+
+    runner = QERunner(default_backend="submit", submit_executable=str(submit_script))
+    result = runner.run(
+        silicon_scf(pseudo_file="Si.UPF", pseudo_dir="./pseudo"),
+        workdir=tmp_path,
+        submit_config=SubmitConfig(run_name="sipseudo"),
+        dry_run=False,
+    )
+
+    assert result.returncode == 0
+    assert "Si.UPF" in result.command
+    assert (tmp_path / "Si.UPF").exists()
 
 
 def test_submit_manager_defaults_from_executable_prefix(tmp_path) -> None:
