@@ -332,6 +332,21 @@ class QERunner:
         return sanitized
 
     @staticmethod
+    def _should_use_manager_locator(
+        manager: str | None,
+        locator: str | None,
+    ) -> bool:
+        if not locator:
+            return False
+
+        locator_name = Path(locator).name.lower()
+        # Default OpticDFT locator should only be used with OpticDFT managers.
+        if locator_name == "opticdft.wavefilelocation":
+            return bool(manager) and "opticdft" in manager.lower()
+
+        return True
+
+    @staticmethod
     def _submit_pseudo_inputs(step: QEStep, config: SubmitConfig) -> list[str]:
         if step.deck is None:
             return []
@@ -1614,7 +1629,10 @@ class QERunner:
                 )
                 step_submit_config.env[manager_file_action_env] = file_action
 
-                if file_action.startswith("FETCH") and manager_file_action_locator:
+                if file_action.startswith("FETCH") and self._should_use_manager_locator(
+                    step_submit_config.manager,
+                    manager_file_action_locator,
+                ):
                     locator_path = Path(manager_file_action_locator)
                     if not locator_path.is_absolute():
                         locator_path = base_dir / locator_path
@@ -1658,7 +1676,12 @@ class QERunner:
                 break
 
             step_save_dir = self._step_save_dir(base_dir, step)
-            if step_save_dir is not None and step_save_dir.exists():
+            should_stage_save_dir = not bool(step_submit_config.manager)
+            if (
+                should_stage_save_dir
+                and step_save_dir is not None
+                and step_save_dir.exists()
+            ):
                 save_input = self._submit_input_path(base_dir, step_save_dir)
                 if save_input not in shared_submit_inputs:
                     shared_submit_inputs.append(save_input)

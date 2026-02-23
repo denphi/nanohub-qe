@@ -616,6 +616,29 @@ def test_run_workflow_submit_verbose_logs_commands(tmp_path: Path, capsys) -> No
     assert "no download command candidates configured" in captured.out
 
 
+def test_run_workflow_submit_non_opticdft_manager_skips_opticdft_locator_warning(
+    tmp_path: Path, capsys
+) -> None:
+    workflow = silicon_bands_workflow()
+    _touch_workflow_pseudos(workflow, tmp_path)
+    runner = QERunner(default_backend="submit", verbose=True)
+
+    runner.run_workflow_submit(
+        workflow,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(
+            run_name="si-remote",
+            manager="espresso-7.1_mpi-cleanup_pw",
+        ),
+        dry_run=True,
+        wait=False,
+        sync_outputs=False,
+    )
+
+    captured = capsys.readouterr()
+    assert "locator file not found: OPTICDFT.wavefilelocation" not in captured.out
+
+
 def test_run_workflow_submit_shows_wait_feedback_by_default(tmp_path: Path, capsys) -> None:
     submit_script = tmp_path / "submit"
     _write_fake_submit(submit_script)
@@ -741,6 +764,34 @@ def test_run_workflow_submit_stages_existing_save_dir_between_steps(tmp_path: Pa
     assert "-i tmp/qe.save" in results["dos"].stdout
     assert "-i tmp/qe.save" in results["bands_pw"].stdout
     assert "-i tmp/qe.save" in results["bands_pp"].stdout
+
+
+def test_run_workflow_submit_does_not_stage_save_dir_when_manager_is_set(tmp_path: Path) -> None:
+    from nanohubqe import silicon_bands_dos_reference_workflow
+
+    workflow = silicon_bands_dos_reference_workflow(include_plotband=False)
+    _touch_workflow_pseudos(workflow, tmp_path)
+
+    save_dir = tmp_path / "tmp" / "qe.save"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    (save_dir / "data-file-schema.xml").write_text("<xml/>", encoding="utf-8")
+
+    runner = QERunner(default_backend="submit")
+    results = runner.run_workflow_submit(
+        workflow,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(
+            run_name="si-remote",
+            manager="espresso-7.1_mpi-cleanup_pw",
+        ),
+        dry_run=True,
+        wait=False,
+        sync_outputs=False,
+    )
+
+    assert "-i tmp/qe.save" not in results["dos"].stdout
+    assert "-i tmp/qe.save" not in results["bands_pw"].stdout
+    assert "-i tmp/qe.save" not in results["bands_pp"].stdout
 
 
 def test_run_workflow_submit_auto_applies_manager_file_actions(tmp_path: Path) -> None:
