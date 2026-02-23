@@ -126,6 +126,8 @@ class QERunner:
         self,
         qe_command: Sequence[str],
         submit_config: SubmitConfig,
+        *,
+        use_double_dash: bool = False,
     ) -> list[str]:
         """Build a HUBzero `submit` command around a QE command."""
 
@@ -159,6 +161,8 @@ class QERunner:
             command.extend(["--parameters", submit_config.parameters])
 
         command.extend(submit_config.extra_args)
+        if use_double_dash:
+            command.append("--")
         command.extend(remote_command)
         return command
 
@@ -658,6 +662,35 @@ class QERunner:
                 missing.append(f"glob:{pattern}")
         return missing
 
+    @staticmethod
+    def _submit_qe_command_variants(step: QEStep, step_command: list[str]) -> list[list[str]]:
+        variants: list[list[str]] = [list(step_command)]
+        seen: set[str] = {shlex.join(step_command)}
+
+        if step.input_mode == "flag" and step.input_filename:
+            prefix = list(step_command)
+            if (
+                len(step_command) >= 2
+                and step_command[-2] == step.input_flag
+                and step_command[-1] == step.input_filename
+            ):
+                prefix = list(step_command[:-2])
+
+            candidate_variants = [
+                prefix,
+                [*prefix, "-i", step.input_filename],
+                [*prefix, "-in", step.input_filename],
+                [*prefix, step.input_filename],
+            ]
+            for candidate in candidate_variants:
+                key = shlex.join(candidate)
+                if key in seen:
+                    continue
+                seen.add(key)
+                variants.append(candidate)
+
+        return variants
+
     def run(
         self,
         deck: PWInputDeck,
@@ -746,6 +779,36 @@ class QERunner:
             command = self.build_submit_command(step_command, cfg)
             submitted = True
 
+            if not dry_run:
+                missing_submit_inputs: list[str] = []
+                for item in cfg.input_files:
+                    candidate = Path(item)
+                    if not candidate.is_absolute():
+                        candidate = workdir_path / candidate
+                    if not candidate.exists():
+                        missing_submit_inputs.append(item)
+                if missing_submit_inputs:
+                    missing_text = ", ".join(missing_submit_inputs)
+                    error_text = (
+                        "Submit input files are missing in workdir "
+                        f"'{workdir_path}': {missing_text}"
+                    )
+                    output_path.write_text(error_text + "\n", encoding="utf-8")
+                    return ExecutionResult(
+                        command=command,
+                        returncode=1,
+                        stdout="",
+                        stderr=error_text,
+                        workdir=workdir_path,
+                        input_file=input_path,
+                        output_file=output_path,
+                        expected_outputs=expected_outputs,
+                        discovered_outputs=self._discover_outputs(workdir_path, resolved_step, output_path),
+                        submitted=True,
+                        remote_run_name=cfg.run_name,
+                        remote_status="submit_failed",
+                    )
+
         if dry_run:
             stdout = shlex.join(command)
             output_path.write_text(stdout + "\n", encoding="utf-8")
@@ -791,30 +854,54 @@ class QERunner:
 
             retry_notes.append(summarize_attempt(command, process))
 
+            variant_configs: list[SubmitConfig] = [self._clone_submit_config(effective_submit_config)]
+
+            def add_variant(*, venue: bool | None = None, manager: bool | None = None, input_flag: str | None = None):
+                variant = self._clone_submit_config(effective_submit_config)
+                if venue is False:
+                    variant.venue = None
+                if manager is False:
+                    variant.manager = None
+                if input_flag is not None:
+                    variant.program_input_flag = input_flag
+                variant_configs.append(variant)
+
+            if effective_submit_config.venue:
+                add_variant(venue=False)
+            if effective_submit_config.manager:
+                add_variant(manager=False)
+            if effective_submit_config.venue and effective_submit_config.manager:
+                add_variant(venue=False, manager=False)
+            if effective_submit_config.program_input_flag != "-in":
+                add_variant(input_flag="-in")
+                if effective_submit_config.venue:
+                    add_variant(venue=False, input_flag="-in")
+                if effective_submit_config.manager:
+                    add_variant(manager=False, input_flag="-in")
+                if effective_submit_config.venue and effective_submit_config.manager:
+                    add_variant(venue=False, manager=False, input_flag="-in")
+
+            if effective_submit_config.executable_prefix or effective_submit_config.executable_map:
+                add_variant(manager=False, input_flag="-in")
+
+            qe_command_variants = self._submit_qe_command_variants(resolved_step, step_command)
             retry_candidates: list[tuple[list[str], SubmitConfig]] = []
-
-            if effective_submit_config.venue:
-                venue_free = self._clone_submit_config(effective_submit_config)
-                venue_free.venue = None
-                retry_candidates.append(
-                    (self.build_submit_command(step_command, venue_free), venue_free)
-                )
-
-            retry_candidates.append(
-                (
-                    self.build_submit_command_legacy(step_command, effective_submit_config),
-                    effective_submit_config,
-                )
-            )
-            if effective_submit_config.venue:
-                venue_free_legacy = self._clone_submit_config(effective_submit_config)
-                venue_free_legacy.venue = None
-                retry_candidates.append(
-                    (
-                        self.build_submit_command_legacy(step_command, venue_free_legacy),
-                        venue_free_legacy,
+            for variant in variant_configs:
+                for qe_variant in qe_command_variants:
+                    retry_candidates.append((self.build_submit_command(qe_variant, variant), variant))
+                    retry_candidates.append(
+                        (
+                            self.build_submit_command(
+                                qe_variant,
+                                variant,
+                                use_double_dash=True,
+                            ),
+                            variant,
+                        )
                     )
-                )
+                    retry_candidates.append(
+                        (self.build_submit_command_legacy(qe_variant, variant), variant)
+                    )
 
             attempted: set[str] = {shlex.join(command)}
             for retry_command, retry_cfg in retry_candidates:

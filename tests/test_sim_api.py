@@ -8,6 +8,21 @@ import pytest
 from nanohubqe import QERunner, SubmitConfig, silicon_bands_dos_reference_workflow
 
 
+def _touch_workflow_pseudos(workflow, workdir: Path) -> None:
+    for _, step in workflow.iter_steps():
+        if step.deck is None:
+            continue
+        pseudo_dir_raw = str(step.deck.control.get("pseudo_dir", "./pseudo"))
+        pseudo_dir = Path(pseudo_dir_raw)
+        if not pseudo_dir.is_absolute():
+            pseudo_dir = workdir / pseudo_dir
+        pseudo_dir.mkdir(parents=True, exist_ok=True)
+        for species in step.deck.atomic_species:
+            pseudo_path = pseudo_dir / species.pseudo_file
+            if not pseudo_path.exists():
+                pseudo_path.write_text("pseudo\n", encoding="utf-8")
+
+
 def _write_fake_submit(script_path: Path) -> None:
     script_path.write_text(
         (
@@ -167,6 +182,7 @@ def test_run_submit_supports_plotting_after_wait_and_sync(tmp_path: Path) -> Non
     _write_fake_submit(submit_script)
 
     sim = silicon_bands_dos_reference_workflow(include_plotband=False)
+    _touch_workflow_pseudos(sim, tmp_path)
     runner = QERunner(default_backend="submit", submit_executable=str(submit_script))
 
     sim.run_submit(
