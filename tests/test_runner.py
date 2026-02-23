@@ -196,6 +196,28 @@ def _write_fake_submit_out_of_service(script_path: Path) -> None:
     script_path.chmod(0o755)
 
 
+def _write_fake_submit_out_of_service_when_venue(script_path: Path) -> None:
+    script_path.write_text(
+        (
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "\n"
+            "args = sys.argv[1:]\n"
+            "if '--status' in args or (args and args[0] == 'status'):\n"
+            "    print('status: completed')\n"
+            "    raise SystemExit(0)\n"
+            "if '--venue' in args:\n"
+            "    print('All specified venues are out of service.')\n"
+            "    print('Please select another venue or attempt execution at a later time.')\n"
+            "    raise SystemExit(8)\n"
+            "print('Submitted job id: no-venue-job')\n"
+            "raise SystemExit(0)\n"
+        ),
+        encoding="utf-8",
+    )
+    script_path.chmod(0o755)
+
+
 def test_build_submit_command_includes_common_flags() -> None:
     runner = QERunner()
     submit_cfg = SubmitConfig(
@@ -275,6 +297,27 @@ def test_run_step_submit_adds_generated_inputfile(tmp_path) -> None:
     )
 
     assert "submit --venue nanohub -i dos.in dos.x -in dos.in" == result.stdout
+
+
+def test_run_step_submit_optional_inputs_can_be_missing(tmp_path) -> None:
+    runner = QERunner(default_backend="submit")
+    step = QEStep(
+        executable="epsilon.x",
+        input_text="&inputpp\n/\n",
+        submit_input_files=["OPTICDFT.wavefilelocation"],
+        allow_missing_submit_input_files=True,
+    )
+
+    result = runner.run_step(
+        step,
+        step_name="optical",
+        workdir=tmp_path,
+        submit_config=SubmitConfig(run_name="optic"),
+        dry_run=True,
+    )
+
+    assert result.returncode == 0
+    assert "-i OPTICDFT.wavefilelocation" in result.stdout
 
 
 def test_run_submit_matches_nanohub_style_pw_command(tmp_path) -> None:
@@ -401,6 +444,26 @@ def test_submit_out_of_service_is_reported_as_error(tmp_path: Path) -> None:
     assert result.returncode == 8
     assert result.remote_status is None
     assert "out of service" in result.stderr.lower()
+
+
+def test_submit_out_of_service_retries_without_venue(tmp_path: Path) -> None:
+    submit_script = tmp_path / "submit"
+    _write_fake_submit_out_of_service_when_venue(submit_script)
+    pseudo_dir = tmp_path / "pseudo"
+    pseudo_dir.mkdir(parents=True, exist_ok=True)
+    (pseudo_dir / "Si.UPF").write_text("pseudo\n", encoding="utf-8")
+
+    runner = QERunner(default_backend="submit", submit_executable=str(submit_script))
+    result = runner.run(
+        silicon_scf(pseudo_file="Si.UPF", pseudo_dir="./pseudo"),
+        workdir=tmp_path,
+        submit_config=SubmitConfig(run_name="sioosretry", venue="nanohub"),
+        dry_run=False,
+    )
+
+    assert result.returncode == 0
+    assert result.submitted
+    assert result.remote_job_id == "no-venue-job"
 
 
 def test_run_step_records_expected_and_discovered_outputs(tmp_path) -> None:

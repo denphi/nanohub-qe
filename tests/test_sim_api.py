@@ -5,7 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from nanohubqe import QERunner, SubmitConfig, silicon_bands_dos_reference_workflow
+from nanohubqe import (
+    QERunner,
+    SubmitConfig,
+    silicon_bands_dos_reference_workflow,
+    silicon_bands_workflow,
+)
 
 
 def _touch_workflow_pseudos(workflow, workdir: Path) -> None:
@@ -176,6 +181,58 @@ def test_prepare_pseudopotentials_delegates_to_helper(monkeypatch) -> None:
     assert status[0].action == "exists"
     assert captured["workflow"] is sim
     assert captured["kwargs"]["workdir"] == "runs/sim"
+
+
+def test_run_auto_prepares_pseudopotentials_before_execution(tmp_path: Path, monkeypatch) -> None:
+    sim = silicon_bands_workflow(pseudo_file="Si.UPF", pseudo_dir="./pseudo")
+    captured: dict[str, object] = {}
+
+    def fake_ensure(workflow, **kwargs):
+        captured["workflow"] = workflow
+        captured["kwargs"] = kwargs
+        return []
+
+    monkeypatch.setattr("nanohubqe.pseudo.ensure_workflow_pseudopotentials", fake_ensure)
+
+    runner = QERunner(default_backend="local", pw_executable="true")
+    sim.run(workdir=tmp_path, runner=runner, dry_run=False)
+
+    assert captured["workflow"] is sim
+    assert captured["kwargs"]["workdir"] == tmp_path
+
+
+def test_run_submit_auto_prepares_pseudopotentials_before_submission(
+    tmp_path: Path, monkeypatch
+) -> None:
+    submit_script = tmp_path / "submit"
+    _write_fake_submit(submit_script)
+
+    sim = silicon_bands_workflow(pseudo_file="Si.UPF", pseudo_dir="./pseudo")
+    captured: dict[str, object] = {}
+
+    def fake_ensure(workflow, **kwargs):
+        pseudo_path = Path(kwargs["workdir"]) / "pseudo" / "Si.UPF"
+        pseudo_path.parent.mkdir(parents=True, exist_ok=True)
+        pseudo_path.write_text("pseudo\n", encoding="utf-8")
+        captured["workflow"] = workflow
+        captured["kwargs"] = kwargs
+        return []
+
+    monkeypatch.setattr("nanohubqe.pseudo.ensure_workflow_pseudopotentials", fake_ensure)
+
+    runner = QERunner(default_backend="submit", submit_executable=str(submit_script))
+    sim.run_submit(
+        workdir=tmp_path,
+        runner=runner,
+        submit_config=SubmitConfig(run_name="si"),
+        dry_run=False,
+        wait=False,
+        sync_outputs=False,
+    )
+
+    assert set(sim.results) == {"scf", "bands"}
+    assert captured["workflow"] is sim
+    assert captured["kwargs"]["workdir"] == tmp_path
 
 
 def test_run_submit_supports_plotting_after_wait_and_sync(tmp_path: Path) -> None:

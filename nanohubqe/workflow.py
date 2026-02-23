@@ -29,6 +29,7 @@ class QEStep:
     input_filename: str | None = None
     output_filename: str | None = None
     submit_input_files: list[str] = field(default_factory=list)
+    allow_missing_submit_input_files: bool = False
     expected_output_files: list[str] = field(default_factory=list)
     expected_output_globs: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
@@ -87,6 +88,28 @@ class QEWorkflow:
     metadata: dict[str, str] = field(default_factory=dict)
     _last_results: dict[str, ExecutionResult] = field(default_factory=dict, init=False, repr=False)
     _last_workdir: Path | None = field(default=None, init=False, repr=False)
+
+    @staticmethod
+    def _print_pseudo_statuses(
+        statuses: Sequence[PseudoStatus],
+        *,
+        verbose: bool | None,
+    ) -> None:
+        if not verbose:
+            return
+        for item in statuses:
+            if item.source:
+                print(
+                    f"[nanohubqe] pseudo: {item.pseudo_file} {item.action} -> "
+                    f"{item.target_path} (source={item.source})",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[nanohubqe] pseudo: {item.pseudo_file} {item.action} -> "
+                    f"{item.target_path}",
+                    flush=True,
+                )
 
     def _normalize_step(
         self,
@@ -179,10 +202,25 @@ class QEWorkflow:
         input_suffix: str = ".in",
         output_suffix: str = ".out",
         output_record_filename: str | None = "workflow_outputs.json",
+        auto_prepare_pseudopotentials: bool = True,
+        pseudo_source_urls: Sequence[str] | None = None,
+        pseudo_local_search_dirs: Sequence[str | Path] | None = None,
+        pseudo_timeout: float = 20.0,
+        pseudo_overwrite: bool = False,
     ) -> QEWorkflow:
         """Run this workflow and cache results for convenience helpers."""
 
         from .runner import QERunner
+
+        if auto_prepare_pseudopotentials and not dry_run:
+            statuses = self.prepare_pseudopotentials(
+                workdir=workdir,
+                source_urls=pseudo_source_urls,
+                local_search_dirs=pseudo_local_search_dirs,
+                timeout=pseudo_timeout,
+                overwrite=pseudo_overwrite,
+            )
+            self._print_pseudo_statuses(statuses, verbose=verbose)
 
         active_runner = runner or QERunner()
         results = active_runner.run_workflow(
@@ -218,10 +256,25 @@ class QEWorkflow:
         input_suffix: str = ".in",
         output_suffix: str = ".out",
         output_record_filename: str | None = "workflow_outputs.json",
+        auto_prepare_pseudopotentials: bool = True,
+        pseudo_source_urls: Sequence[str] | None = None,
+        pseudo_local_search_dirs: Sequence[str | Path] | None = None,
+        pseudo_timeout: float = 20.0,
+        pseudo_overwrite: bool = False,
     ) -> QEWorkflow:
         """Submit this workflow and optionally wait/sync outputs for plotting."""
 
         from .runner import QERunner
+
+        if auto_prepare_pseudopotentials and not dry_run:
+            statuses = self.prepare_pseudopotentials(
+                workdir=workdir,
+                source_urls=pseudo_source_urls,
+                local_search_dirs=pseudo_local_search_dirs,
+                timeout=pseudo_timeout,
+                overwrite=pseudo_overwrite,
+            )
+            self._print_pseudo_statuses(statuses, verbose=verbose)
 
         active_runner = runner or QERunner(default_backend="submit")
         results = active_runner.run_workflow_submit(

@@ -713,16 +713,27 @@ def silicon_bands_dos_reference_workflow(
 
 def gaas_opticdft_epsilon_workflow(
     *,
-    a: float = 5.653,
-    ecutwfc: float = 50.0,
+    a: float = 5.746848,
+    ecutwfc: float = 100.0,
     ecutrho: float | None = None,
-    scf_k_points: tuple[int, int, int, int, int, int] = (6, 6, 6, 0, 0, 0),
+    scf_k_points: tuple[int, int, int, int, int, int] = (5, 5, 5, 0, 0, 0),
     ga_pseudo_file: str = "Ga.upf",
     as_pseudo_file: str = "As.upf",
-    prefix: str = "gaas",
-    pseudo_dir: str = "./pseudo",
-    outdir: str = "./tmp",
+    prefix: str = "optical",
+    pseudo_dir: str = "./",
+    outdir: str = "./",
     conv_thr: float = 1.0e-8,
+    etot_conv_thr: float = 1.0e-8,
+    forc_conv_thr: float = 1.0e-4,
+    nstep: int = 50,
+    electron_maxstep: int = 200,
+    degauss: float = 0.1,
+    occupations: str = "smearing",
+    smearing: str = "gauss",
+    input_dft: str = "PBE",
+    noinv: bool = True,
+    nosym: bool = True,
+    vdw_corr: str = "none",
     epsilon_wmin: float = 0.0,
     epsilon_wmax: float = 20.0,
     epsilon_nw: int = 400,
@@ -733,35 +744,62 @@ def gaas_opticdft_epsilon_workflow(
 ) -> QEWorkflow:
     """GaAs SCF -> epsilon.x workflow mirroring OpticDFT submit staging."""
 
-    if ecutrho is None:
-        ecutrho = 8.0 * ecutwfc
-
-    control = _default_control(
-        calculation="scf",
-        prefix=prefix,
-        pseudo_dir=pseudo_dir,
-        outdir=outdir,
-    )
-    system = {
-        "ibrav": 2,
-        "celldm(1)": a * _BOHR_PER_ANGSTROM,
-        "ecutwfc": ecutwfc,
-        "ecutrho": ecutrho,
-        "occupations": "fixed",
+    control = {
+        "calculation": "scf",
+        "disk_io": "minimal",
+        "etot_conv_thr": etot_conv_thr,
+        "forc_conv_thr": forc_conv_thr,
+        "nstep": nstep,
+        "outdir": outdir,
+        "prefix": prefix,
+        "pseudo_dir": pseudo_dir,
+        "tstress": True,
     }
-    electrons = {"conv_thr": conv_thr}
+    system = {
+        "degauss": degauss,
+        "ecutwfc": ecutwfc,
+        "input_dft": input_dft,
+        "noinv": noinv,
+        "nosym": nosym,
+        "occupations": occupations,
+        "smearing": smearing,
+        "vdw_corr": vdw_corr,
+        "ibrav": 0,
+        "nat": 8,
+        "ntyp": 2,
+    }
+    if ecutrho is not None:
+        system["ecutrho"] = ecutrho
+    electrons = {"conv_thr": conv_thr, "electron_maxstep": electron_maxstep}
     scf_deck = PWInputDeck(
         control=control,
         system=system,
         electrons=electrons,
+        ions={"ion_dynamics": None},
+        cell={"cell_dynamics": None},
         atomic_species=[
-            Species("Ga", 69.723, ga_pseudo_file),
-            Species("As", 74.921595, as_pseudo_file),
+            Species("As", 74.9216, as_pseudo_file),
+            Species("Ga", 69.7230, ga_pseudo_file),
         ],
-        atomic_positions=[Atom("Ga", (0.0, 0.0, 0.0)), Atom("As", (0.25, 0.25, 0.25))],
+        atomic_positions=[
+            Atom("Ga", (0.750000, 0.250000, 0.750000)),
+            Atom("Ga", (0.750000, 0.750000, 0.250000)),
+            Atom("Ga", (0.250000, 0.250000, 0.250000)),
+            Atom("Ga", (0.250000, 0.750000, 0.750000)),
+            Atom("As", (0.000000, 0.000000, 0.000000)),
+            Atom("As", (0.000000, 0.500000, 0.500000)),
+            Atom("As", (0.500000, 0.000000, 0.500000)),
+            Atom("As", (0.500000, 0.500000, 0.000000)),
+        ],
         atomic_positions_mode="crystal",
         k_points_mode="automatic",
         k_points=scf_k_points,
+        cell_parameters=[
+            (a, 0.0, 0.0),
+            (0.0, a, 0.0),
+            (0.0, 0.0, a),
+        ],
+        cell_parameters_mode="angstrom",
     )
 
     epsilon_input = f"""
@@ -793,6 +831,7 @@ def gaas_opticdft_epsilon_workflow(
             input_text=epsilon_input,
             args=optical_args,
             submit_input_files=[wavefile_location_file],
+            allow_missing_submit_input_files=True,
             env={**shared_env, "OPTICDFTFileAction": "FETCH:DESTROY"},
             notes="Fetch/consume stored wavefunction location from OpticDFT staging.",
         ),

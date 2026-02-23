@@ -58,6 +58,8 @@ def test_gaas_opticdft_template_contains_two_species_and_opticdft_env() -> None:
 
     assert workflow.order == ["scf", "optical"]
     assert scf.deck is not None
-    assert [species.symbol for species in scf.deck.atomic_species] == ["Ga", "As"]
+    assert [species.symbol for species in scf.deck.atomic_species] == ["As", "Ga"]
+    assert len(scf.deck.atomic_positions) == 8
+    assert scf.deck.k_points == (5, 5, 5, 0, 0, 0)
     assert scf.env["OPTICDFTFileAction"] == "CREATESTORE:SAVE"
     assert optical.env["OPTICDFTFileAction"] == "FETCH:DESTROY"

@@ -93,8 +93,8 @@ print(result.returncode, result.output_file)
 
 ## Auto-Provision Pseudopotentials
 
-If `pseudo_dir` does not exist (or a required `*.UPF` file is missing),
-you can provision pseudopotentials before running:
+`sim.run(...)` and `sim.run_submit(...)` now auto-provision missing `*.UPF`
+files (unless `dry_run=True`). If needed, you can still provision explicitly:
 
 ```python
 from nanohubqe import ensure_workflow_pseudopotentials, silicon_bands_dos_reference_workflow
@@ -113,6 +113,13 @@ for item in status:
 `ensure_workflow_pseudopotentials` checks local pseudo directories first
 (`ESPRESSO_PSEUDO`, `QE_PSEUDO`, etc.), then downloads from Quantum ESPRESSO
 UPF repositories if needed.
+
+To disable auto provisioning in workflow helpers:
+
+```python
+sim.run(workdir="runs/si-reference", auto_prepare_pseudopotentials=False)
+sim.run_submit(workdir="runs/si-remote", auto_prepare_pseudopotentials=False)
+```
 
 ## Run Remotely with HUBzero `submit`
 

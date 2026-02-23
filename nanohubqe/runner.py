@@ -334,7 +334,9 @@ class QERunner:
             if entry not in config.input_files:
                 config.input_files.append(entry)
         for entry in self._submit_pseudo_inputs(step):
-            if entry not in config.input_files:
+            entry_name = Path(entry).name
+            basename_exists = any(Path(existing).name == entry_name for existing in config.input_files)
+            if entry not in config.input_files and not basename_exists:
                 config.input_files.append(entry)
         if config.stage_input_file and input_filename and input_filename not in config.input_files:
             config.input_files.append(input_filename)
@@ -372,8 +374,6 @@ class QERunner:
 
         text = ((process.stdout or "") + "\n" + (process.stderr or "")).lower()
         fatal_markers = (
-            "all specified venues are out of service",
-            "please select another venue or attempt execution at a later time",
             "command line argument parsing failed",
             "runname contains non-alphanumeric characters",
             "invalid manager",
@@ -924,7 +924,10 @@ class QERunner:
 
             if not dry_run:
                 missing_submit_inputs: list[str] = []
+                optional_inputs = set(resolved_step.submit_input_files) if resolved_step.allow_missing_submit_input_files else set()
                 for item in cfg.input_files:
+                    if item in optional_inputs:
+                        continue
                     candidate = Path(item)
                     if not candidate.is_absolute():
                         candidate = workdir_path / candidate

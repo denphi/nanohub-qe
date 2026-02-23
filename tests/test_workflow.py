@@ -142,3 +142,18 @@ def test_gaas_opticdft_workflow_runs_scf_then_optical(tmp_path) -> None:
     optical_text = results["optical"].input_file.read_text(encoding="utf-8")
     assert "&inputpp" in optical_text
     assert "calculation = 'eps'" in optical_text
+
+    scf_text = results["scf"].input_file.read_text(encoding="utf-8")
+    assert "disk_io = 'minimal'" in scf_text
+    assert "prefix = 'optical'" in scf_text
+    assert "pseudo_dir = './'" in scf_text
+    assert "outdir = './'" in scf_text
+    assert " nat = 8," in scf_text
+    assert " ntyp = 2," in scf_text
+    assert " occupations = 'smearing'" in scf_text
+    assert " smearing = 'gauss'" in scf_text
+    assert " noinv = .true." in scf_text
+    assert " nosym = .true." in scf_text
+    assert "K_POINTS automatic" in scf_text
+    assert " 5 5 5 0 0 0" in scf_text
+    assert "CELL_PARAMETERS angstrom" in scf_text
