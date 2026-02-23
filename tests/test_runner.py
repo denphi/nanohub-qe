@@ -44,15 +44,15 @@ def _write_fake_submit(script_path: Path) -> None:
             "\n"
             "if '--download' in args or (args and args[0] == 'download'):\n"
             "    run_name = run_name_from_args(args)\n"
-            "    normalized = run_name.replace('_', '-')\n"
-            "    if normalized.endswith('-scf'):\n"
+            "    lowered = run_name.lower()\n"
+            "    if lowered.endswith('scf'):\n"
             "        (workdir / 'scf.out').write_text(\n"
             "            ' total energy = -10.0 Ry\\n total energy = -11.0 Ry\\n JOB DONE.\\n',\n"
             "            encoding='utf-8',\n"
             "        )\n"
-            "    if normalized.endswith('-dos'):\n"
+            "    if lowered.endswith('dos'):\n"
             "        (workdir / 'qe.dos').write_text('0.0 1.0 1.0\\n1.0 2.0 3.0\\n', encoding='utf-8')\n"
-            "    if normalized.endswith('-bands-pp') or run_name.endswith('bands_pp'):\n"
+            "    if lowered.endswith('bandspp'):\n"
             "        (workdir / 'qe.bands.dat').write_text(\n"
             "            '&plot nbnd= 2, nks= 3 /\\n'\n"
             "            ' 0.500000 0.500000 0.500000\\n'\n"
@@ -97,8 +97,8 @@ def _write_fake_submit_without_dos(script_path: Path) -> None:
             "\n"
             "if '--download' in args or (args and args[0] == 'download'):\n"
             "    run_name = run_name_from_args(args)\n"
-            "    normalized = run_name.replace('_', '-')\n"
-            "    if normalized.endswith('-scf'):\n"
+            "    lowered = run_name.lower()\n"
+            "    if lowered.endswith('scf'):\n"
             "        (workdir / 'scf.out').write_text(\n"
             "            ' total energy = -10.0 Ry\\n total energy = -11.0 Ry\\n JOB DONE.\\n',\n"
             "            encoding='utf-8',\n"
@@ -137,12 +137,17 @@ def _write_fake_submit_rc1_status_visible(script_path: Path) -> None:
     script_path.write_text(
         (
             "#!/usr/bin/env python3\n"
+            "import pathlib\n"
             "import sys\n"
             "\n"
             "args = sys.argv[1:]\n"
+            "workdir = pathlib.Path.cwd()\n"
             "if '--status' in args or (args and args[0] == 'status'):\n"
             "    print('status: running')\n"
             "    raise SystemExit(0)\n"
+            "counter = workdir / 'submit_attempts.txt'\n"
+            "attempts = int(counter.read_text(encoding='utf-8')) if counter.exists() else 0\n"
+            "counter.write_text(str(attempts + 1), encoding='utf-8')\n"
             "raise SystemExit(1)\n"
         ),
         encoding="utf-8",
@@ -157,7 +162,7 @@ def test_build_submit_command_includes_common_flags() -> None:
         n_cpus=8,
         wall_time="01:30:00",
         manager="espresso-7.1_mpi-cleanup_pw",
-        run_name="si_test",
+        run_name="sitest",
         input_files=["qe.in"],
         env={"ESPRESSO_TMPDIR": "./tmp"},
     )
@@ -242,7 +247,7 @@ def test_run_submit_matches_nanohub_style_pw_command(tmp_path) -> None:
             nodes=2,
             walltime="01:00:00",
             manager="espresso-6.8_mpi-cleanup_pw",
-            run_name="si_job",
+            run_name="sijob",
             executable_prefix="espresso-7.1",
         ),
         dry_run=True,
@@ -250,7 +255,7 @@ def test_run_submit_matches_nanohub_style_pw_command(tmp_path) -> None:
 
     assert (
         "submit -n 2 -w 01:00:00 --manager espresso-7.1_mpi-cleanup_pw "
-        "--runName si_job -i pseudo/Si.UPF -i qe.in espresso-7.1_pw -i qe.in"
+        "--runName sijob -i pseudo/Si.UPF -i qe.in espresso-7.1_pw -i qe.in"
     ) == result.stdout
 
 
@@ -264,7 +269,7 @@ def test_submit_manager_defaults_from_executable_prefix(tmp_path) -> None:
         submit_config=SubmitConfig(
             nodes=2,
             walltime="01:00:00",
-            run_name="si_job",
+            run_name="sijob",
             executable_prefix="espresso-7.1",
         ),
         dry_run=True,
@@ -287,7 +292,7 @@ def test_submit_run_name_is_sanitized_for_submit_compatibility(tmp_path) -> None
         dry_run=True,
     )
 
-    assert "--runName si_reference_remote" in result.stdout
+    assert "--runName sireferenceremote" in result.stdout
 
 
 def test_submit_rc1_registered_release_is_treated_as_success(tmp_path) -> None:
@@ -330,6 +335,7 @@ def test_submit_rc1_with_status_visibility_is_treated_as_success(tmp_path) -> No
     assert result.returncode == 0
     assert result.submitted
     assert result.remote_status == "running"
+    assert (tmp_path / "submit_attempts.txt").read_text(encoding="utf-8").strip() == "1"
 
 
 def test_run_step_records_expected_and_discovered_outputs(tmp_path) -> None:
@@ -389,7 +395,7 @@ def test_run_workflow_submit_waits_and_syncs_outputs(tmp_path: Path) -> None:
     assert results["scf"].submitted
     assert results["scf"].remote_status == "completed"
     assert results["scf"].outputs_synced
-    assert results["scf"].remote_run_name == "si_remote_scf"
+    assert results["scf"].remote_run_name == "siremotescf"
 
 
 def test_run_workflow_submit_verbose_logs_commands(tmp_path: Path, capsys) -> None:

@@ -21,6 +21,7 @@ from .workflow import QEStep, QEWorkflow
 class SubmitConfig:
     """Configuration for remote execution via the HUBzero `submit` command."""
 
+    # Optional venue; passed to submit only when explicitly set.
     venue: str | None = None
     run_name: str | None = None
     manager: str | None = None
@@ -53,7 +54,7 @@ class SubmitConfig:
     align_manager_with_executable_prefix: bool = True
     # If submit returns non-zero, try status probing and accept if the run is visible.
     accept_nonzero_submit_if_status_visible: bool = True
-    # If True, sanitize run names to [A-Za-z0-9_] for submit compatibility.
+    # If True, sanitize run names to [A-Za-z0-9] for submit compatibility.
     sanitize_run_name: bool = True
 
 
@@ -294,8 +295,7 @@ class QERunner:
 
     @staticmethod
     def _sanitize_submit_run_name(run_name: str) -> str:
-        sanitized = re.sub(r"[^A-Za-z0-9_]", "_", run_name)
-        sanitized = re.sub(r"_+", "_", sanitized).strip("_")
+        sanitized = re.sub(r"[^A-Za-z0-9]", "", run_name)
         if not sanitized:
             return "run"
         return sanitized
@@ -965,6 +965,51 @@ class QERunner:
         submit_accepted = submitted and self._is_submit_submission_accepted(process)
         if submit_accepted:
             submit_remote_status = "submitted"
+        if (
+            submitted
+            and not submit_accepted
+            and process.returncode != 0
+            and effective_submit_config is not None
+            and effective_submit_config.accept_nonzero_submit_if_status_visible
+            and effective_submit_config.run_name
+        ):
+            status_probe_errors: list[str] = []
+            status_probe_text = ""
+            for _ in range(3):
+                try:
+                    status, status_output = self._query_submit_status(
+                        run_name=effective_submit_config.run_name,
+                        step_name=step_name,
+                        workdir=workdir_path,
+                        submit_config=effective_submit_config,
+                        timeout=timeout,
+                        verbose=verbose_enabled,
+                    )
+                    status_probe_text = status_output
+                    submit_accepted = True
+                    submit_remote_status = status if status != "unknown" else "submitted"
+                    self._verbose_print(
+                        verbose_enabled,
+                        (
+                            "[nanohubqe] non-zero submit accepted via status probe: "
+                            f"{submit_remote_status}"
+                        ),
+                    )
+                    break
+                except Exception as exc:  # pragma: no cover - defensive fallback
+                    status_probe_errors.append(str(exc))
+                    time.sleep(0.5)
+
+            if submit_accepted and status_probe_text.strip():
+                process = subprocess.CompletedProcess(
+                    args=process.args,
+                    returncode=process.returncode,
+                    stdout=(process.stdout + "\n" + status_probe_text).strip(),
+                    stderr=process.stderr,
+                )
+            elif status_probe_errors:
+                retry_notes.append("Status probe attempts:\n" + "\n".join(status_probe_errors))
+
         if (
             submitted
             and process.returncode != 0

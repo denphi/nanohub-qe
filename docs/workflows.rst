@@ -60,7 +60,7 @@ wait for completion, and sync outputs for plotting.
        nodes=4,
        walltime="00:30:00",
        manager="espresso-7.1_mpi-cleanup_pw",
-       run_name="si-reference-remote",
+       run_name="sireferenceremote",
        executable_prefix="espresso-7.1",
    )
 
@@ -71,7 +71,7 @@ wait for completion, and sync outputs for plotting.
        runner=runner,
        submit_config=submit_cfg,
        dry_run=False,
-        verbose=True,
+       verbose=True,
        wait=True,
        sync_outputs=True,
    )

@@ -129,7 +129,7 @@ submit_cfg = SubmitConfig(
     nodes=16,
     walltime="02:00:00",
     manager="espresso-7.1_mpi-cleanup_pw",
-    run_name="si-scf",
+    run_name="siscf",
     input_files=["pseudo/Si.UPF"],  # additional inputs; qe.in is staged automatically
     executable_prefix="espresso-7.1",  # pw.x -> espresso-7.1_pw
     env={"ESPRESSO_PSEUDO": "./pseudo"},
@@ -141,7 +141,7 @@ submit_cfg = SubmitConfig(
 # Set dry_run=False to submit for real
 result = runner.run(deck, workdir="runs/remote-si", submit_config=submit_cfg, dry_run=True)
 print(result.stdout)
-# submit -n 16 -w 02:00:00 --manager espresso-7.1_mpi-cleanup_pw --runName si-scf \
+# submit -n 16 -w 02:00:00 --manager espresso-7.1_mpi-cleanup_pw --runName siscf \
 #   -i pseudo/Si.UPF -i qe.in espresso-7.1_pw -i qe.in
 ```
 
@@ -158,7 +158,7 @@ submit_cfg = SubmitConfig(
     nodes=4,
     walltime="00:30:00",
     manager="espresso-7.1_mpi-cleanup_pw",
-    run_name="si-reference-remote",
+    run_name="sireferenceremote",
     executable_prefix="espresso-7.1",
 )
 
@@ -177,6 +177,8 @@ sim.plot_dos(backend="plotly")
 
 # To allow completion even when expected output files are missing locally:
 # submit_cfg.require_expected_outputs = False
+
+# Note: run_name is sanitized to alphanumeric characters for submit compatibility.
 ```
 
 ## Multi-step Workflow Example
