@@ -9,7 +9,7 @@ import shlex
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -968,6 +968,14 @@ class QERunner:
                         remote_status="submit_failed",
                     )
 
+            if input_path is not None and resolved_step.deck is not None:
+                # Remote submit generally stages input files by basename in run root,
+                # so force pseudo_dir to current directory for submit-generated decks.
+                submit_control = dict(resolved_step.deck.control)
+                submit_control["pseudo_dir"] = "./"
+                submit_deck = replace(resolved_step.deck, control=submit_control)
+                input_path.write_text(submit_deck.to_string(), encoding="utf-8")
+
         if dry_run:
             stdout = shlex.join(command)
             self._verbose_print(
@@ -1280,11 +1288,28 @@ class QERunner:
         input_suffix: str = ".in",
         output_suffix: str = ".out",
         output_record_filename: str | None = "workflow_outputs.json",
+        auto_prepare_pseudopotentials: bool = True,
+        pseudo_source_urls: Sequence[str] | None = None,
+        pseudo_local_search_dirs: Sequence[str | Path] | None = None,
+        pseudo_timeout: float = 20.0,
+        pseudo_overwrite: bool = False,
     ) -> dict[str, ExecutionResult]:
         """Run each step in a `QEWorkflow` sequentially."""
 
         base_dir = Path(workdir)
         base_dir.mkdir(parents=True, exist_ok=True)
+
+        if auto_prepare_pseudopotentials and not dry_run:
+            from .pseudo import ensure_workflow_pseudopotentials
+
+            ensure_workflow_pseudopotentials(
+                workflow,
+                workdir=base_dir,
+                source_urls=pseudo_source_urls,
+                local_search_dirs=pseudo_local_search_dirs,
+                timeout=pseudo_timeout,
+                overwrite=pseudo_overwrite,
+            )
 
         results: dict[str, ExecutionResult] = {}
         for step_name, step in workflow.iter_steps(
@@ -1347,12 +1372,29 @@ class QERunner:
         input_suffix: str = ".in",
         output_suffix: str = ".out",
         output_record_filename: str | None = "workflow_outputs.json",
+        auto_prepare_pseudopotentials: bool = True,
+        pseudo_source_urls: Sequence[str] | None = None,
+        pseudo_local_search_dirs: Sequence[str | Path] | None = None,
+        pseudo_timeout: float = 20.0,
+        pseudo_overwrite: bool = False,
     ) -> dict[str, ExecutionResult]:
         """Submit each workflow step and optionally wait/sync outputs."""
 
         verbose_enabled = self._is_verbose(verbose)
         base_dir = Path(workdir)
         base_dir.mkdir(parents=True, exist_ok=True)
+
+        if auto_prepare_pseudopotentials and not dry_run:
+            from .pseudo import ensure_workflow_pseudopotentials
+
+            ensure_workflow_pseudopotentials(
+                workflow,
+                workdir=base_dir,
+                source_urls=pseudo_source_urls,
+                local_search_dirs=pseudo_local_search_dirs,
+                timeout=pseudo_timeout,
+                overwrite=pseudo_overwrite,
+            )
 
         results: dict[str, ExecutionResult] = {}
         for step_name, step in workflow.iter_steps(
