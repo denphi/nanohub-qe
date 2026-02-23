@@ -123,7 +123,7 @@ Common flags supported by the runner include:
 from nanohubqe import QERunner, SubmitConfig, silicon_scf
 
 deck = silicon_scf()
-runner = QERunner(default_backend="submit")
+runner = QERunner(default_backend="submit", verbose=True)  # print executed commands
 
 submit_cfg = SubmitConfig(
     nodes=16,
@@ -153,7 +153,7 @@ from nanohubqe import QERunner, SubmitConfig, silicon_bands_dos_reference_workfl
 sim = silicon_bands_dos_reference_workflow(include_plotband=False)
 sim.prepare_pseudopotentials(workdir="runs/si-remote")
 
-runner = QERunner(default_backend="submit")
+runner = QERunner(default_backend="submit", verbose=True)
 submit_cfg = SubmitConfig(
     nodes=4,
     walltime="00:30:00",
@@ -167,6 +167,7 @@ sim.run_submit(
     runner=runner,
     submit_config=submit_cfg,
     dry_run=False,     # True => command preview only
+    verbose=True,      # print submit/status/download commands
     wait=True,         # poll submit status for completion
     sync_outputs=True, # try submit download/fetch commands
 )

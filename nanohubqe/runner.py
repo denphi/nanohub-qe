@@ -51,6 +51,8 @@ class SubmitConfig:
     require_expected_outputs: bool = True
     # If True, align espresso manager version with executable_prefix (when possible).
     align_manager_with_executable_prefix: bool = True
+    # If submit returns non-zero, try status probing and accept if the run is visible.
+    accept_nonzero_submit_if_status_visible: bool = True
 
 
 @dataclass
@@ -85,6 +87,17 @@ class QERunner:
     submit_executable: str = "submit"
     mpi_prefix: list[str] = field(default_factory=list)
     default_backend: str = "local"
+    verbose: bool = False
+
+    def _is_verbose(self, verbose: bool | None) -> bool:
+        if verbose is None:
+            return self.verbose
+        return verbose
+
+    @staticmethod
+    def _verbose_print(enabled: bool, message: str) -> None:
+        if enabled:
+            print(message)
 
     def build_pw_command(self, input_filename: str) -> list[str]:
         return [*self.mpi_prefix, self.pw_executable, "-in", input_filename]
@@ -242,6 +255,7 @@ class QERunner:
             results_search_dirs=list(config.results_search_dirs),
             require_expected_outputs=config.require_expected_outputs,
             align_manager_with_executable_prefix=config.align_manager_with_executable_prefix,
+            accept_nonzero_submit_if_status_visible=config.accept_nonzero_submit_if_status_visible,
         )
 
     @staticmethod
@@ -448,7 +462,9 @@ class QERunner:
         workdir: Path,
         submit_config: SubmitConfig,
         timeout: float | None = None,
+        verbose: bool | None = None,
     ) -> tuple[str, str]:
+        verbose_enabled = self._is_verbose(verbose)
         candidates = self._status_command_candidates(
             run_name=run_name,
             step_name=step_name,
@@ -457,6 +473,10 @@ class QERunner:
         )
         errors: list[str] = []
         for command in candidates:
+            self._verbose_print(
+                verbose_enabled,
+                f"[nanohubqe] status command: {shlex.join(command)} (cwd={workdir})",
+            )
             try:
                 process = subprocess.run(
                     command,
@@ -471,6 +491,10 @@ class QERunner:
                 continue
 
             combined = self._combine_process_output(process)
+            self._verbose_print(
+                verbose_enabled,
+                f"[nanohubqe] status rc={process.returncode}",
+            )
             if process.returncode != 0:
                 errors.append(
                     f"{shlex.join(command)} -> rc={process.returncode}: {combined.strip()}"
@@ -492,9 +516,11 @@ class QERunner:
         submit_config: SubmitConfig,
         poll_interval: float = 20.0,
         wait_timeout: float | None = None,
+        verbose: bool | None = None,
     ) -> tuple[str, str]:
         """Wait for a submitted run to complete using submit status queries."""
 
+        verbose_enabled = self._is_verbose(verbose)
         base_dir = Path(workdir)
         start = time.monotonic()
         last_output = ""
@@ -506,6 +532,11 @@ class QERunner:
                 workdir=base_dir,
                 submit_config=submit_config,
                 timeout=wait_timeout,
+                verbose=verbose_enabled,
+            )
+            self._verbose_print(
+                verbose_enabled,
+                f"[nanohubqe] submit status for '{run_name}' ({step_name}): {status}",
             )
             last_output = output_text
             if status == "completed":
@@ -534,9 +565,11 @@ class QERunner:
         workdir: str | Path,
         submit_config: SubmitConfig,
         timeout: float | None = None,
+        verbose: bool | None = None,
     ) -> bool:
         """Try to sync/download outputs for a completed submit run."""
 
+        verbose_enabled = self._is_verbose(verbose)
         base_dir = Path(workdir)
         candidates = self._download_command_candidates(
             run_name=run_name,
@@ -545,6 +578,10 @@ class QERunner:
             submit_config=submit_config,
         )
         for command in candidates:
+            self._verbose_print(
+                verbose_enabled,
+                f"[nanohubqe] download command: {shlex.join(command)} (cwd={base_dir})",
+            )
             try:
                 process = subprocess.run(
                     command,
@@ -557,6 +594,10 @@ class QERunner:
             except FileNotFoundError:
                 continue
 
+            self._verbose_print(
+                verbose_enabled,
+                f"[nanohubqe] download rc={process.returncode}",
+            )
             if process.returncode == 0:
                 return True
         return False
@@ -745,6 +786,7 @@ class QERunner:
         submit_config: SubmitConfig | None = None,
         timeout: float | None = None,
         dry_run: bool = False,
+        verbose: bool | None = None,
     ) -> ExecutionResult:
         """Write a pw.x input deck and execute it."""
 
@@ -763,6 +805,7 @@ class QERunner:
             submit_config=submit_config,
             timeout=timeout,
             dry_run=dry_run,
+            verbose=verbose,
         )
 
     def run_step(
@@ -775,9 +818,11 @@ class QERunner:
         submit_config: SubmitConfig | None = None,
         timeout: float | None = None,
         dry_run: bool = False,
+        verbose: bool | None = None,
     ) -> ExecutionResult:
         """Execute a single workflow step."""
 
+        verbose_enabled = self._is_verbose(verbose)
         backend_name = (backend or self.default_backend).lower()
         if backend_name not in {"local", "submit"}:
             raise ValueError("backend must be either 'local' or 'submit'")
@@ -854,6 +899,10 @@ class QERunner:
 
         if dry_run:
             stdout = shlex.join(command)
+            self._verbose_print(
+                verbose_enabled,
+                f"[nanohubqe] dry-run command: {stdout} (cwd={workdir_path})",
+            )
             output_path.write_text(stdout + "\n", encoding="utf-8")
             discovered_outputs = self._discover_outputs(workdir_path, resolved_step, output_path)
             return ExecutionResult(
@@ -878,6 +927,10 @@ class QERunner:
             run_env.update(resolved_step.env)
 
         stdin_text = input_text if resolved_step.input_mode == "stdin" else None
+        self._verbose_print(
+            verbose_enabled,
+            f"[nanohubqe] command: {shlex.join(command)} (cwd={workdir_path})",
+        )
         process = subprocess.run(
             command,
             cwd=workdir_path,
@@ -888,9 +941,16 @@ class QERunner:
             check=False,
             env=run_env,
         )
+        self._verbose_print(
+            verbose_enabled,
+            f"[nanohubqe] rc={process.returncode}",
+        )
 
         retry_notes: list[str] = []
+        submit_remote_status: str | None = None
         submit_accepted = submitted and self._is_submit_submission_accepted(process)
+        if submit_accepted:
+            submit_remote_status = "submitted"
         if (
             submitted
             and process.returncode != 0
@@ -959,6 +1019,10 @@ class QERunner:
                     continue
                 attempted.add(key)
 
+                self._verbose_print(
+                    verbose_enabled,
+                    f"[nanohubqe] retry command: {shlex.join(retry_command)} (cwd={workdir_path})",
+                )
                 retry_process = subprocess.run(
                     retry_command,
                     cwd=workdir_path,
@@ -969,6 +1033,10 @@ class QERunner:
                     check=False,
                     env=run_env,
                 )
+                self._verbose_print(
+                    verbose_enabled,
+                    f"[nanohubqe] retry rc={retry_process.returncode}",
+                )
                 retry_notes.append(summarize_attempt(retry_command, retry_process))
 
                 retry_accepted = self._is_submit_submission_accepted(retry_process)
@@ -977,10 +1045,52 @@ class QERunner:
                     command = retry_command
                     effective_submit_config = retry_cfg
                     submit_accepted = retry_accepted
+                    if retry_accepted:
+                        submit_remote_status = "submitted"
                     break
 
         if submitted and not submit_accepted:
             submit_accepted = self._is_submit_submission_accepted(process)
+            if submit_accepted:
+                submit_remote_status = "submitted"
+
+        if (
+            submitted
+            and not submit_accepted
+            and effective_submit_config is not None
+            and effective_submit_config.accept_nonzero_submit_if_status_visible
+            and effective_submit_config.run_name
+        ):
+            status_probe_errors: list[str] = []
+            status_probe_text = ""
+            for _ in range(3):
+                try:
+                    status, status_output = self._query_submit_status(
+                        run_name=effective_submit_config.run_name,
+                        step_name=step_name,
+                        workdir=workdir_path,
+                        submit_config=effective_submit_config,
+                        timeout=timeout,
+                        verbose=verbose_enabled,
+                    )
+                    status_probe_text = status_output
+                    # If status command returns successfully, the run exists remotely.
+                    submit_accepted = True
+                    submit_remote_status = status if status != "unknown" else "submitted"
+                    break
+                except Exception as exc:  # pragma: no cover - defensive fallback
+                    status_probe_errors.append(str(exc))
+                    time.sleep(0.5)
+
+            if submit_accepted and status_probe_text.strip():
+                process = subprocess.CompletedProcess(
+                    args=process.args,
+                    returncode=process.returncode,
+                    stdout=(process.stdout + "\n" + status_probe_text).strip(),
+                    stderr=process.stderr,
+                )
+            elif status_probe_errors:
+                retry_notes.append("Status probe attempts:\n" + "\n".join(status_probe_errors))
 
         effective_returncode = 0 if (submitted and submit_accepted) else process.returncode
 
@@ -1019,7 +1129,7 @@ class QERunner:
                 effective_submit_config.run_name if effective_submit_config is not None else None
             ),
             remote_job_id=job_id if submitted else None,
-            remote_status=("submitted" if submitted and effective_returncode == 0 else None),
+            remote_status=(submit_remote_status if submitted and effective_returncode == 0 else None),
         )
 
     def run_workflow(
@@ -1031,6 +1141,7 @@ class QERunner:
         submit_config: SubmitConfig | None = None,
         timeout: float | None = None,
         dry_run: bool = False,
+        verbose: bool | None = None,
         input_suffix: str = ".in",
         output_suffix: str = ".out",
         output_record_filename: str | None = "workflow_outputs.json",
@@ -1053,6 +1164,7 @@ class QERunner:
                 submit_config=submit_config,
                 timeout=timeout,
                 dry_run=dry_run,
+                verbose=verbose,
             )
             results[step_name] = result
             if result.returncode != 0:
@@ -1091,6 +1203,7 @@ class QERunner:
         submit_config: SubmitConfig | None = None,
         timeout: float | None = None,
         dry_run: bool = False,
+        verbose: bool | None = None,
         wait: bool = True,
         sync_outputs: bool = True,
         poll_interval: float = 20.0,
@@ -1102,6 +1215,7 @@ class QERunner:
     ) -> dict[str, ExecutionResult]:
         """Submit each workflow step and optionally wait/sync outputs."""
 
+        verbose_enabled = self._is_verbose(verbose)
         base_dir = Path(workdir)
         base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1110,6 +1224,10 @@ class QERunner:
             input_suffix=input_suffix,
             output_suffix=output_suffix,
         ):
+            self._verbose_print(
+                verbose_enabled,
+                f"[nanohubqe] workflow step: {step_name}",
+            )
             step_submit_config = self._submit_config_for_step(
                 submit_config=submit_config,
                 workflow_name=workflow.name,
@@ -1125,6 +1243,7 @@ class QERunner:
                 submit_config=step_submit_config,
                 timeout=timeout,
                 dry_run=dry_run,
+                verbose=verbose_enabled,
             )
             if result.remote_run_name is None:
                 result.remote_run_name = step_submit_config.run_name
@@ -1145,6 +1264,7 @@ class QERunner:
                         submit_config=step_submit_config,
                         poll_interval=poll_interval,
                         wait_timeout=wait_timeout,
+                        verbose=verbose_enabled,
                     )
                     result.remote_status = remote_status
                     if status_text.strip():
@@ -1176,6 +1296,7 @@ class QERunner:
                     workdir=base_dir,
                     submit_config=step_submit_config,
                     timeout=timeout,
+                    verbose=verbose_enabled,
                 )
                 copied = self._sync_expected_outputs_from_results_store(
                     step=step,

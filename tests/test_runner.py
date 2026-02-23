@@ -131,6 +131,23 @@ def _write_fake_submit_rc1_but_submitted(script_path: Path) -> None:
     script_path.chmod(0o755)
 
 
+def _write_fake_submit_rc1_status_visible(script_path: Path) -> None:
+    script_path.write_text(
+        (
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "\n"
+            "args = sys.argv[1:]\n"
+            "if '--status' in args or (args and args[0] == 'status'):\n"
+            "    print('status: running')\n"
+            "    raise SystemExit(0)\n"
+            "raise SystemExit(1)\n"
+        ),
+        encoding="utf-8",
+    )
+    script_path.chmod(0o755)
+
+
 def test_build_submit_command_includes_common_flags() -> None:
     runner = QERunner()
     submit_cfg = SubmitConfig(
@@ -165,6 +182,24 @@ def test_runner_dry_run_generates_input_and_command(tmp_path) -> None:
     assert "pw.x -in qe.in" in result.stdout
     assert result.input_file.exists()
     assert result.output_file.exists()
+
+
+def test_verbose_prints_dry_run_command(tmp_path, capsys) -> None:
+    runner = QERunner(default_backend="local", pw_executable="pw.x", verbose=True)
+
+    runner.run(silicon_scf(), workdir=tmp_path, dry_run=True)
+
+    captured = capsys.readouterr()
+    assert "[nanohubqe] dry-run command: pw.x -in qe.in" in captured.out
+
+
+def test_verbose_can_be_disabled_per_call(tmp_path, capsys) -> None:
+    runner = QERunner(default_backend="local", pw_executable="pw.x", verbose=True)
+
+    runner.run(silicon_scf(), workdir=tmp_path, dry_run=True, verbose=False)
+
+    captured = capsys.readouterr()
+    assert "[nanohubqe]" not in captured.out
 
 
 def test_run_step_dry_run_for_postprocess_executable(tmp_path) -> None:
@@ -258,6 +293,26 @@ def test_submit_rc1_registered_release_is_treated_as_success(tmp_path) -> None:
     assert (tmp_path / "submit_calls.txt").read_text(encoding="utf-8").strip() == "1"
 
 
+def test_submit_rc1_with_status_visibility_is_treated_as_success(tmp_path) -> None:
+    submit_script = tmp_path / "submit"
+    _write_fake_submit_rc1_status_visible(submit_script)
+    pseudo_dir = tmp_path / "pseudo"
+    pseudo_dir.mkdir(parents=True, exist_ok=True)
+    (pseudo_dir / "Si.UPF").write_text("pseudo\n", encoding="utf-8")
+
+    runner = QERunner(default_backend="submit", submit_executable=str(submit_script))
+    result = runner.run(
+        silicon_scf(pseudo_file="Si.UPF", pseudo_dir="./pseudo"),
+        workdir=tmp_path,
+        submit_config=SubmitConfig(run_name="dbg-status-visible"),
+        dry_run=False,
+    )
+
+    assert result.returncode == 0
+    assert result.submitted
+    assert result.remote_status == "running"
+
+
 def test_run_step_records_expected_and_discovered_outputs(tmp_path) -> None:
     runner = QERunner(default_backend="local")
     step = QEStep(
@@ -316,6 +371,30 @@ def test_run_workflow_submit_waits_and_syncs_outputs(tmp_path: Path) -> None:
     assert results["scf"].remote_status == "completed"
     assert results["scf"].outputs_synced
     assert results["scf"].remote_run_name == "si-remote-scf"
+
+
+def test_run_workflow_submit_verbose_logs_commands(tmp_path: Path, capsys) -> None:
+    submit_script = tmp_path / "submit"
+    _write_fake_submit(submit_script)
+
+    workflow = silicon_bands_workflow()
+    _touch_workflow_pseudos(workflow, tmp_path)
+    runner = QERunner(default_backend="submit", submit_executable=str(submit_script), verbose=True)
+
+    runner.run_workflow_submit(
+        workflow,
+        workdir=tmp_path,
+        submit_config=SubmitConfig(run_name="si-remote"),
+        wait=True,
+        sync_outputs=True,
+        poll_interval=0.01,
+        wait_timeout=5.0,
+    )
+
+    captured = capsys.readouterr()
+    assert "[nanohubqe] command:" in captured.out
+    assert "[nanohubqe] status command:" in captured.out
+    assert "[nanohubqe] download command:" in captured.out
 
 
 def test_run_workflow_submit_fails_when_expected_outputs_are_missing(tmp_path: Path) -> None:

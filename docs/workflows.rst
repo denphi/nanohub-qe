@@ -55,7 +55,7 @@ wait for completion, and sync outputs for plotting.
    sim = silicon_bands_dos_reference_workflow(include_plotband=False)
    sim.prepare_pseudopotentials(workdir="runs/si-remote")
 
-   runner = QERunner(default_backend="submit")
+   runner = QERunner(default_backend="submit", verbose=True)
    submit_cfg = SubmitConfig(
        nodes=4,
        walltime="00:30:00",
@@ -71,6 +71,7 @@ wait for completion, and sync outputs for plotting.
        runner=runner,
        submit_config=submit_cfg,
        dry_run=False,
+        verbose=True,
        wait=True,
        sync_outputs=True,
    )
